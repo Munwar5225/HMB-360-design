@@ -6,8 +6,12 @@ const NTB_COLS = [
   { k: 'day', label: 'Opened Today', strong: 1 },
   { k: 'mtd', label: 'Opened MTD' },
   { k: 'ytd', label: 'Opened YTD', major: 1 },
+  { k: 'pyYtd', label: 'Prior Yr YTD' },
+  { k: 'yoyVar', label: 'YoY Var', signed: 1 },
   { k: 'fmtd', label: 'Funded MTD' },
   { k: 'fytd', label: 'Funded YTD' },
+  { k: 'pyFytd', label: 'Prior Yr Funded' },
+  { k: 'fyoyVar', label: 'Funded YoY', signed: 1 },
   { k: 'tmtd', label: 'Target MTD' },
   { k: 'tytd', label: 'Target YTD', major: 1 },
   { k: 'vmtd', label: 'Var MTD', signed: 1 },
@@ -25,7 +29,7 @@ const NTB_FUNDED_DAY_IX = {
   SBBM: [], BBM: [7], BSM: [8], RO: [9], 'Un-Assigned': [10],
 };
 
-/* 4.1 Top cards: 5 cards (Opened Today/MTD/YTD, Target YTD, Funded YTD) — NO Variance YTD, NO YoY dummy */
+/* 4.1 Top cards: 5 measure cards (Opened Today/MTD/YTD, Target YTD, Funded YTD) + YoY Variance headline card */
 const NTB_CARDS = [
   { id: 'day', label: 'Opened Today', sub: 'For the day', accent: '#059669', icon: ['account_balance_wallet', 'o'], on: 'opened' },
   { id: 'mtd', label: 'Opened MTD', sub: 'For the month', accent: '#3867D6', icon: ['bar_chart', 'r'], on: 'opened' },
@@ -36,6 +40,7 @@ const NTB_CARDS = [
 const NTB_MEASURE = {
   opened: { label: 'Accounts Opened', lead: 'ytd', accent: '#047857' },
   funded: { label: 'Accounts Funded', lead: 'fytd', accent: '#0D9488' },
+  yoy: { label: 'YoY Variance', lead: 'yoyVar', accent: '#0284C7' },
 };
 const NTB_PF = [
   { id: 'All', label: 'All' },
@@ -91,12 +96,34 @@ const N = v => (typeof v === 'number' ? F.count(v) : '—');
 const P = v => (typeof v === 'number' ? F.percent(v) : '—');
 function ntbRoleKey(name) { if (/^RBHs$/i.test(name)) return 'Branch'; if (/^TOTAL$/i.test(name)) return 'Total'; return name; }
 
-/* ---------------- data (port of ntb-report_2.js build(), zero dummy data) ---------------- */
+/* ---------------- data (port of ntb-report_2.js build() + deterministic prior-year dummy baseline for YoY) ---------------- */
 const NtbData = (() => {
   let built = null;
   const num = (a, i) => (a && typeof a[i] === 'number' ? a[i] : 0);
   const sumAt = (a, list, off = 0) => { let t = 0; for (let i = 0; i < list.length; i++) t += num(a, list[i] + off); return t; };
   const achieve = (done, target) => (target ? (done / target) * 100 : 0);
+  const pctChange = (cur, py) => (py > 0 ? ((cur - py) / py) * 100 : null);
+  const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+  function ntbRand(seed) {
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return () => {
+      h = (h + 0x6D2B79F5) | 0;
+      let t = h;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function attachYoY(m, pyYtd, pyFytd) {
+    m.pyYtd = pyYtd;
+    m.yoyVar = m.ytd - pyYtd;
+    m.yoyPct = pctChange(m.ytd, pyYtd);
+    m.pyFytd = pyFytd;
+    m.fyoyVar = m.fytd - pyFytd;
+    m.fyoyPct = pctChange(m.fytd, pyFytd);
+    return m;
+  }
 
   function build() {
     const HM_HUBS = {}, HUB_HM = {}, STREAM_OF = {};
@@ -119,6 +146,12 @@ const NtbData = (() => {
     const sc = WEB_DATA.ntb_sc, ix = {};
     sc.id_columns.forEach((c, i) => { if (!(c in ix)) ix[c] = i; });
     const g = (r, c) => (c in ix ? r.ids[ix[c]] : null);
+    const rbhFactorCache = {};
+    const headFactor = (seg, head) => {
+      const k = `${seg}|${head}`;
+      if (rbhFactorCache[k] == null) rbhFactorCache[k] = 0.80 + ntbRand(`ntb-yoy-head|${k}`)() * 0.28;
+      return rbhFactorCache[k];
+    };
 
     const branches = sc.rows.filter(r => !!g(r, 'SC Code')).map(r => {
       const code = String(g(r, 'SC Code'));
@@ -144,6 +177,12 @@ const NtbData = (() => {
       };
       const p = r.periods || {};
       const day = p['For the Day'] || [], mtd = p['For The Month'] || [], ytd = p['Year to Date'] || [], tm = p['Target - MTD'] || [], ty = p['Target - YTD'] || [];
+      const pyArr = p['Prior Year YTD'] || null;
+      const head = b.segment === 'SME' ? b.rbhSme : b.rbh;
+      const brRnd = ntbRand(`ntb-yoy-br|${b.segment}|${code}`);
+      const brFactor = clamp(headFactor(b.segment, head) + (brRnd() - 0.5) * 0.24, 0.70, 1.24);
+      let totPyYtd = 0, totPyFytd = 0;
+
       NTB_ROLES.forEach((name, i) => {
         const tix = NTB_TARGET_IX[name] || [], fix = NTB_FUNDED_DAY_IX[name] || [];
         const m = {
@@ -156,8 +195,26 @@ const NtbData = (() => {
         };
         m.amtd = achieve(m.fmtd, m.tmtd);
         m.aytd = achieve(m.fytd, m.tytd);
+        if (name !== 'Total') {
+          let pyYtd, pyFytd;
+          if (pyArr) {
+            pyYtd = num(pyArr, i);
+            pyFytd = sumAt(pyArr, tix, NTB_FUNDED_BASE);
+          } else {
+            const rr = ntbRand(`ntb-yoy-rl|${code}|${name}`);
+            const rf = clamp(brFactor + (rr() - 0.5) * 0.12, 0.68, 1.28);
+            const ff = clamp(rf + (rr() - 0.5) * 0.08, 0.68, 1.30);
+            pyYtd = m.ytd > 0 ? Math.max(1, Math.round(m.ytd * rf)) : 0;
+            pyFytd = m.fytd > 0 ? Math.max(1, Math.round(m.fytd * ff)) : 0;
+          }
+          attachYoY(m, pyYtd, pyFytd);
+          totPyYtd += pyYtd;
+          totPyFytd += pyFytd;
+        }
         b.m[name] = m;
       });
+      attachYoY(b.m.Total, totPyYtd, totPyFytd);
+
       const t = b.m.Total, ro = b.m.RO;
       const br = {
         day: t.day - ro.day, mtd: t.mtd - ro.mtd, ytd: t.ytd - ro.ytd,
@@ -167,6 +224,7 @@ const NtbData = (() => {
       };
       br.amtd = achieve(br.fmtd, br.tmtd);
       br.aytd = achieve(br.fytd, br.tytd);
+      attachYoY(br, t.pyYtd - ro.pyYtd, t.pyFytd - ro.pyFytd);
       b.m.Branch = br;
       return b;
     });
@@ -182,16 +240,25 @@ const NtbData = (() => {
     };
     const ros = src.rows.filter(r => !!r.ids[ii['EMP _ Name']]).map(r => {
       const m = {};
-      [...NTB_COLS.map(c => c.k), 'fday'].forEach(k => {
+      Object.keys(RO_COL).forEach(k => {
         const v = r.values[vi[RO_COL[k]]];
         m[k] = typeof v === 'number' ? v : 0;
       });
       m.amtd = achieve(m.fmtd, m.tmtd);
       m.aytd = achieve(m.fytd, m.tytd);
+      const code = r.ids[ii['CRO Code']] || '';
+      const name = r.ids[ii['EMP _ Name']];
+      const rsm = r.ids[ii['RSM Name']] || 'Unassigned';
+      const roRnd = ntbRand(`ntb-yoy-ro|${code}|${name}`);
+      const rf = clamp(headFactor('DS', rsm) + (roRnd() - 0.5) * 0.28, 0.68, 1.28);
+      const ff = clamp(rf + (roRnd() - 0.5) * 0.08, 0.68, 1.30);
+      const pyYtd = m.ytd > 0 ? Math.max(1, Math.round(m.ytd * rf)) : 0;
+      const pyFytd = m.fytd > 0 ? Math.max(1, Math.round(m.fytd * ff)) : 0;
+      attachYoY(m, pyYtd, pyFytd);
       const o = {
-        code: r.ids[ii['CRO Code']] || '',
-        name: r.ids[ii['EMP _ Name']],
-        rsm: r.ids[ii['RSM Name']] || 'Unassigned',
+        code,
+        name,
+        rsm,
         region: r.ids[ii['Main Region Name']] || r.ids[ii['Region']] || '',
         segment: 'DS', area: r.ids[ii['Region']] || '', stream: '', m: {},
       };
@@ -200,7 +267,7 @@ const NtbData = (() => {
     });
     return { branches, ros, HM_HUBS, asOf: parseIso(sc.as_of) };
   }
-  return { get() { return built || (built = build()); }, achieve };
+  return { get() { return built || (built = build()); }, achieve, pctChange };
 })();
 
 function ntbLevelVal(level, b) { return String((level.val ? level.val(b) : b[level.field]) || 'Unassigned'); }
@@ -302,13 +369,15 @@ class NtbVM {
   }
   agg(list, roleName) {
     const rk = roleName || this.s.role;
-    const out = { day: 0, mtd: 0, ytd: 0, fday: 0, fmtd: 0, fytd: 0, tmtd: 0, tytd: 0, vmtd: 0, vytd: 0 };
+    const out = { day: 0, mtd: 0, ytd: 0, pyYtd: 0, yoyVar: 0, fday: 0, fmtd: 0, fytd: 0, pyFytd: 0, fyoyVar: 0, tmtd: 0, tytd: 0, vmtd: 0, vytd: 0 };
     list.forEach(b => {
       const v = b.m && b.m[rk]; if (!v) return;
       for (const k in out) out[k] += typeof v[k] === 'number' ? v[k] : 0;
     });
     out.amtd = NtbData.achieve(out.fmtd, out.tmtd);
     out.aytd = NtbData.achieve(out.fytd, out.tytd);
+    out.yoyPct = NtbData.pctChange(out.ytd, out.pyYtd);
+    out.fyoyPct = NtbData.pctChange(out.fytd, out.pyFytd);
     return out;
   }
   listIndex() {
@@ -383,7 +452,7 @@ class NtbVM {
   }
   selectCard(cardId) {
     const c = NTB_CARDS.find(x => x.id === cardId);
-    const meas = c ? c.on : (cardId === 'funded' ? 'funded' : 'opened');
+    const meas = c ? c.on : (cardId === 'funded' ? 'funded' : cardId === 'yoy' ? 'yoy' : 'opened');
     const lead = NTB_MEASURE[meas].lead;
     return this.pulse({ measure: meas, role: 'Branch', path: [], jump: '', graphTab: 0, sortCol: lead, sortDesc: true, openAccordions: new Set() });
   }
@@ -418,10 +487,90 @@ class NtbVM {
 }
 
 /* ---------------- NTB widgets ---------------- */
-function ntbSigned(v) {
+function ntbSignedPct(pct) {
+  if (typeof pct !== 'number' || isNaN(pct)) return '—';
+  const z = Math.abs(pct) < 0.05;
+  return z ? '0.0%' : `${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%`;
+}
+function ntbYoYPipe(pct) {
+  if (typeof pct !== 'number' || isNaN(pct)) return '';
+  return `<span class="gp ${pct < 0 ? 'neg' : ''}"><i>|</i>${ntbSignedPct(pct)}</span>`;
+}
+function ntbYears(vm) {
+  const cur = vm.D.asOf ? vm.D.asOf.getFullYear() : 2026;
+  return { cur, py: cur - 1 };
+}
+function ntbSigned(v, pct) {
   if (typeof v !== 'number') return `<span style="${TM(12.5, 600, ET.muted)}">—</span>`;
   const c = F.delta(v);
-  return `<span style="display:inline-flex;align-items:center;min-width:0"><span style="${TM(9, 700, c)}flex:none">${v < 0 ? '▼' : '▲'}</span><span style="width:5px;flex:none"></span><span class="el1" style="${TM(12.5, 700, c)}">${F.signed(v, 0)}</span></span>`;
+  return `<span style="display:inline-flex;align-items:center;min-width:0;max-width:100%"><span style="${TM(9, 700, c)}flex:none">${v < 0 ? '▼' : '▲'}</span><span style="width:5px;flex:none"></span><span class="el1" style="${TM(12.5, 700, c)}">${F.signed(v, 0)}</span>${ntbYoYPipe(pct)}</span>`;
+}
+
+/* 4.1 / Item #10 NTB YoY Variance Headline Card (simulated prior-year baseline until API provides audited prior-year NTB) */
+function ntbYoYHeadlineCard(vm, v) {
+  const yrs = ntbYears(vm);
+  const neg = v.yoyVar < 0;
+  const tone = F.delta(v.yoyVar);
+  const ratio = v.pyYtd > 0 ? Math.max(0, Math.min(100, (v.ytd / v.pyYtd) * 100)) : 0;
+  const scopeTxt = vm.s.pf === 'DS' ? 'Direct Sales' : 'Branch roles';
+  const badgeStyle = neg
+    ? `background:#FFF7ED;border:1px solid #FED7AA;color:${ET.negative}`
+    : `background:${ET.positive};color:#fff`;
+  const tip = [
+    `Opened YTD (${yrs.cur}): ${N(v.ytd)}`,
+    `Prior Year YTD (${yrs.py}): ${N(v.pyYtd)}`,
+    `YoY Variance (Opened): ${F.signed(v.yoyVar, 0)}${v.yoyPct != null ? ` (${ntbSignedPct(v.yoyPct)})` : ''}`,
+    `Funded YTD (${yrs.cur}): ${N(v.fytd)}`,
+    `Prior Year Funded (${yrs.py}): ${N(v.pyFytd)}`,
+    `YoY Variance (Funded): ${F.signed(v.fyoyVar, 0)}${v.fyoyPct != null ? ` (${ntbSignedPct(v.fyoyPct)})` : ''}`,
+    `(Prior-year NTB figures are simulated placeholder data until audited prior-year columns are supplied by the API.)`,
+  ].join('\n');
+
+  return `<div class="lifted tap esurf" data-act="card" data-id="yoy" style="border-radius:20px;background:#fff;position:relative;overflow:hidden;border:0">
+    <div style="position:absolute;top:-54px;right:-54px;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle closest-side,${rgba(tone, .13)},${rgba(tone, 0)})"></div>
+    <div style="position:relative;padding:14px;border-radius:20px;border:1px solid ${ET.border}">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:34px;height:34px;border-radius:11px;background:${rgba(tone, .14)};border:1px solid ${rgba(tone, .3)};display:flex;align-items:center;justify-content:center;flex:none">${I(neg ? 'trending_down' : 'trending_up', 'r', 18, tone)}</div>
+        <div class="grow">
+          <div class="el1" style="${TB(12.5, 800, ET.ink)}">NTB YoY Variance</div>
+          <div class="el1" style="${TB(10, 500, ET.muted)}margin-top:1px">YTD ${yrs.cur} vs ${yrs.py} · ${scopeTxt}</div>
+        </div>
+        ${infoBtn('NTB YoY Variance', tip)}
+        <div class="pillbtn" title="Open YoY Variance" style="background:${rgba(tone, .08)};border:1px solid ${rgba(tone, .22)}">${I('chevron_right', 'r', 18, tone)}</div>
+      </div>
+
+      <div style="margin-top:12px;display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+        <div style="display:flex;align-items:baseline;gap:6px;min-width:0">
+          <span style="${TD(26, 800, tone, -0.8)}">${F.signed(v.yoyVar, 0)}</span>
+          <span style="${TB(10.5, 700, ET.muted)}">accounts</span>
+        </div>
+        <span class="badge-pct" style="${badgeStyle}">${neg ? '▼' : '▲'} ${ntbSignedPct(v.yoyPct)}</span>
+      </div>
+
+      <div style="margin-top:9px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px">
+          <span style="${TB(10.5, 600, ET.muted)}">vs prior year (${yrs.py})</span>
+          <span style="${TM(11, 700, ET.text2)}white-space:nowrap">${N(v.ytd)} vs ${N(v.pyYtd)}</span>
+        </div>
+        <div style="height:6px;border-radius:999px;background:${ET.track};overflow:hidden">
+          <div style="height:6px;width:${ratio}%;background:${tone}"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="padding:9px 10px;background:${ET.tile};border-radius:12px;min-width:0">
+          <div class="el1" style="${TB(9, 800, ET.muted, 0.7)}">OPENED YTD (${yrs.cur})</div>
+          <div style="margin-top:4px;${TM(13, 800, ET.ink)}">${N(v.ytd)}</div>
+          <div class="el1" style="margin-top:2px;${TB(9.5, 600, ET.muted)}">${yrs.py}: ${N(v.pyYtd)}</div>
+        </div>
+        <div style="padding:9px 10px;background:${ET.tile};border-radius:12px;min-width:0">
+          <div class="el1" style="${TB(9, 800, ET.muted, 0.7)}">FUNDED YOY VAR</div>
+          <div style="margin-top:4px">${ntbSigned(v.fyoyVar, v.fyoyPct)}</div>
+          <div class="el1" style="margin-top:2px;${TB(9.5, 600, ET.muted)}">${N(v.fytd)} vs ${N(v.pyFytd)}</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 /* 4.2 Hero with Accounts Opened and Accounts Funded stacked together */
@@ -503,17 +652,24 @@ function ntbMeasureCard(c, v) {
 function ntbChartCard({ title, subtitle, rows, tabIndex, stats, leadKey }, charts) {
   if (!rows.length) return '';
   const lk = leadKey || 'ytd';
+  const isYoy = lk === 'yoyVar';
   const shown = rows.slice().sort((a, b) => (b.m[lk] || 0) - (a.m[lk] || 0)).slice(0, 8);
   const tabs = ['All', ...shown.map(r => r.label)];
   const sel = Math.max(0, Math.min(tabIndex, tabs.length - 1));
   const vis = sel === 0 ? shown : shown.filter(r => r.label === tabs[sel]);
-  const vals = lk === 'fytd' ? r => [r.m.fday, r.m.fmtd, r.m.fytd] : r => [r.m.day, r.m.mtd, r.m.ytd];
+  const vals = isYoy ? r => [r.m.pyYtd, r.m.ytd] : lk === 'fytd' ? r => [r.m.fday, r.m.fmtd, r.m.fytd] : r => [r.m.day, r.m.mtd, r.m.ytd];
+  const labels = isYoy ? ['PY YTD', 'Cur YTD'] : ['Today', 'MTD', 'YTD'];
   const series = vis.map(r => ({ name: r.label, color: NTB_SERIES[shown.indexOf(r) % NTB_SERIES.length], values: vals(r) }));
   const target = vis.length === 1 && vis[0].m.tytd > 0 ? vis[0].m.tytd : null;
-  const ci = charts.push({ series, labels: ['Today', 'MTD', 'YTD'], target, fillArea: vis.length === 1 }) - 1;
+  const ci = charts.push({ series, labels, target, fillArea: vis.length === 1 }) - 1;
   let statRows = '';
   if (stats) {
-    const metric = s => `<div class="el1" style="${TB(9, 700, ET.muted, 0.4)}">${esc(s[0])}</div><div style="height:3px"></div><div class="el1" style="${TM(12.5, 900, s[1] < 0 ? ET.negative : ET.ink)}">${N(s[1])}</div>`;
+    const metric = s => {
+      const signed = !!s[2];
+      const col = signed ? F.delta(s[1]) : (s[1] < 0 ? ET.negative : ET.ink);
+      const txt = signed ? F.signed(s[1], 0) : N(s[1]);
+      return `<div class="el1" style="${TB(9, 700, ET.muted, 0.4)}">${esc(s[0])}</div><div style="height:3px"></div><div class="el1" style="${TM(12.5, 900, col)}">${txt}</div>`;
+    };
     statRows = `<div style="display:flex;gap:8px;margin:8px 0 10px">${stats.map(s => `<div style="flex:1;min-width:0">${metric(s)}</div>`).join('')}</div>`;
   }
   return `<div class="esurf" style="border-radius:20px;padding:13px">
@@ -564,6 +720,7 @@ function ntbRoleCardsSection(vm, list, ctx) {
         ${grp('TGT VAR (M / Y)', `${sv(v.vmtd)} · ${sv(v.vytd)}`)}
       </div>
       <div style="margin-top:8px;padding-top:8px;border-top:1px solid ${ET.grid};display:flex;flex-wrap:wrap;gap:6px 14px;${TB(10, 600, ET.muted)}">
+        <span>YoY Var <b style="font-family:var(--fMono);color:${F.delta(v.yoyVar)}">${F.signed(v.yoyVar, 0)}</b>${ntbYoYPipe(v.yoyPct)}</span>
         <span>HC ACT <b style="font-family:var(--fMono);color:${ET.ink}">${N(hc)}</b></span>
         <span>Zero Bal <b style="font-family:var(--fMono);color:${ET.ink}">${N(zero)}</b></span>
         <span>Prod/Day <b style="font-family:var(--fMono);color:${ET.ink}">${typeof pMtd === 'number' ? F.number(pMtd, 2) : '—'} / ${typeof pYtd === 'number' ? F.number(pYtd, 2) : '—'}</b></span>
@@ -578,19 +735,42 @@ function ntbRoleCardsSection(vm, list, ctx) {
   </div>`;
 }
 
-/* 4.3 Entity card (Opened Today on Opened measure; Funded MTD/YTD/Var on Funded measure) + 1.2 info button on SC */
+/* 4.3 Entity card (Opened Today on Opened measure; Funded MTD/YTD/Var on Funded; YoY comparison on YoY) + 1.2 info button on SC */
 function ntbEntityCard(vm, item, level) {
-  const v = item.m, isFunded = vm.s.measure === 'funded', isSc = level.k === 'sc';
-  const stats = isFunded
-    ? [['Funded MTD', v.fmtd], ['Funded YTD', v.fytd], ['Target YTD', v.tytd], ['Var YTD', v.vytd, 1]]
-    : [['Opened Today', v.day], ['Opened MTD', v.mtd], ['Opened YTD', v.ytd], ['Var YTD', v.vytd, 1]];
+  const v = item.m, isFunded = vm.s.measure === 'funded', isYoy = vm.s.measure === 'yoy', isSc = level.k === 'sc';
+  const yrs = ntbYears(vm);
+  const stats = isYoy
+    ? [['Opened YTD', v.ytd], [`Prior Yr (${yrs.py})`, v.pyYtd], ['YoY Var', v.yoyVar, 1, v.yoyPct], ['Funded YoY', v.fyoyVar, 1, v.fyoyPct]]
+    : isFunded
+      ? [['Funded MTD', v.fmtd], ['Funded YTD', v.fytd], ['Target YTD', v.tytd], ['Var YTD', v.vytd, 1]]
+      : [['Opened Today', v.day], ['Opened MTD', v.mtd], ['Opened YTD', v.ytd], ['Var YTD', v.vytd, 1]];
   const leadVal = isFunded ? v.fytd : v.ytd;
   const ach = v.tytd ? (leadVal / v.tytd) * 100 : 0;
+  const yoyNeg = v.yoyVar < 0;
+  const yoyTone = F.delta(v.yoyVar);
+  const yoyRatio = v.pyYtd > 0 ? Math.max(0, Math.min(100, (v.ytd / v.pyYtd) * 100)) : 0;
   const tip = isSc && vm.s.pf !== 'DS' ? EopData.whose(item.label) : '';
-  const cell = ([l, val, signed]) => `<div style="min-width:0">
+  const cell = ([l, val, signed, pct]) => `<div style="min-width:0">
     <div class="el1" style="${TB(9.5, 700, ET.sortLabel, 0.3)}">${esc(l.toUpperCase())}</div>
     <div style="height:4px"></div>
-    <div class="el1" style="${TM(12.5, 700, signed ? F.delta(val) : ET.ink)}">${signed ? F.signed(val, 0) : N(val)}</div></div>`;
+    <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:1px">
+      <span style="${TM(12.5, 700, signed ? F.delta(val) : ET.ink)}">${signed ? F.signed(val, 0) : N(val)}</span>${typeof pct === 'number' ? ntbYoYPipe(pct) : ''}
+    </div></div>`;
+  const barHtml = isYoy
+    ? (v.pyYtd > 0 ? `<div style="margin-top:9px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="${TB(10, 600, ET.muted)}">vs ${yrs.py} YTD (${N(v.pyYtd)})</span>
+          <span class="badge-pct ${!yoyNeg ? 'over' : ''}" style="${yoyNeg ? `background:#FFF7ED;color:${ET.negative}` : ''}">${ntbSignedPct(v.yoyPct)}</span>
+        </div>
+        <div style="height:5px;border-radius:999px;background:${ET.track};overflow:hidden"><div style="height:5px;width:${yoyRatio}%;background:${yoyTone}"></div></div>
+      </div>` : '')
+    : (v.tytd > 0 ? `<div style="margin-top:9px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <span style="${TB(10, 600, ET.muted)}">${isFunded ? 'Funded' : 'Opened'} vs target ${N(v.tytd)}</span>
+          <span class="badge-pct ${ach >= 100 ? 'over' : ''}">${P(ach)}</span>
+        </div>
+        <div style="height:5px;border-radius:999px;background:${ET.track};overflow:hidden"><div style="height:5px;width:${Math.max(0, Math.min(100, ach))}%;background:${vm.measureMeta().accent}"></div></div>
+      </div>` : '');
   return `<div class="esurf ${item.deeper ? 'tap' : ''}" ${item.deeper ? `data-act="open" data-id="${esc(item.id)}"` : ''} style="border-radius:20px;padding:14px">
     <div style="display:flex;align-items:center">
       <div class="grow">
@@ -602,13 +782,7 @@ function ntbEntityCard(vm, item, level) {
       <div class="pillbtn" title="Details" data-act="details" data-id="${esc(item.id)}" style="background:#fff;border:1px solid ${ET.eyeBorder}">${I('visibility', 'o', 18, ET.muted)}</div>
       ${item.deeper ? `<span style="width:7px"></span><div class="pillbtn" title="Open" data-act="open" data-id="${esc(item.id)}" style="background:rgba(4,120,87,.078);border:1px solid rgba(4,120,87,.22)">${I('chevron_right', 'r', 18, ET.primary)}</div>` : ''}
     </div>
-    ${v.tytd > 0 ? `<div style="margin-top:9px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <span style="${TB(10, 600, ET.muted)}">${isFunded ? 'Funded' : 'Opened'} vs target ${N(v.tytd)}</span>
-        <span class="badge-pct ${ach >= 100 ? 'over' : ''}">${P(ach)}</span>
-      </div>
-      <div style="height:5px;border-radius:999px;background:${ET.track};overflow:hidden"><div style="height:5px;width:${Math.max(0, Math.min(100, ach))}%;background:${vm.measureMeta().accent}"></div></div>
-    </div>` : ''}
+    ${barHtml}
     <div style="height:12px"></div>
     <div style="height:1px;background:repeating-linear-gradient(90deg,${ET.dashed} 0 4px,transparent 4px 7px)"></div>
     <div style="height:12px"></div>
@@ -682,6 +856,7 @@ Routes['/ntb-report'] = () => {
     o += contextPill(pillText('All measures'));
     if (!list.length) return o + messageView(`No records in ${vm.pfLabel()} for ${vm.s.loginRole.person}${vm.s.stream ? ` (${vm.streamLabel()})` : ''}.`, 'Reset filters', 'reset');
     o += `<div style="height:14px"></div>${ntbHero(vm, v)}<div style="height:12px"></div>`;
+    o += `${ntbYoYHeadlineCard(vm, v)}<div style="height:12px"></div>`;
     o += ntbChartCard({ title: `Accounts opened — by ${rows.level.label}`, subtitle: `${vm.pfLabel()} · top ${Math.min(8, rows.length)} ${rows.level.label}s of ${rows.length} by year to date · dashed line is YTD target`, rows, tabIndex: vm.s.graphTab, leadKey: 'ytd' }, charts);
     o += `<div style="height:12px"></div>`;
     NTB_CARDS.forEach(c => { o += ntbMeasureCard(c, v) + `<div style="height:12px"></div>`; });
@@ -694,7 +869,8 @@ Routes['/ntb-report'] = () => {
     const v = vm.agg(list, vm.s.role);
     const rows = vm.rowsHere();
     ctx.rows = rows;
-    const level = rows.level, meta = vm.measureMeta(), isFunded = vm.s.measure === 'funded';
+    const level = rows.level, meta = vm.measureMeta(), isFunded = vm.s.measure === 'funded', isYoy = vm.s.measure === 'yoy';
+    const yrs = ntbYears(vm);
     const lv = vm.levels();
     const head = vm.s.path.length ? '' : vm.bookHead();
     const where = head || (vm.s.path.length ? vm.s.path[vm.s.path.length - 1] : vm.pfLabel());
@@ -706,64 +882,138 @@ Routes['/ntb-report'] = () => {
     o += contextPill(pillText(meta.label.toUpperCase()));
     if (!list.length) return o + messageView('Nothing at this level for this selection.', 'Reset filters', 'reset');
 
-    const leadVal = isFunded ? v.fytd : v.ytd;
+    const leadVal = isYoy ? v.yoyVar : isFunded ? v.fytd : v.ytd;
     const ach = v.tytd ? (leadVal / v.tytd) * 100 : 0;
-    const cells = isFunded
-      ? [['Funded Today', v.fday], ['Funded MTD', v.fmtd], ['Target YTD', v.tytd], ['Variance YTD', v.vytd, 1], ['Ach % MTD', v.amtd, 0, 1], ['Opened YTD', v.ytd]]
-      : [['Opened Today', v.day], ['Opened MTD', v.mtd], ['Target YTD', v.tytd], ['Variance YTD', v.vytd, 1], ['Ach % MTD', v.amtd, 0, 1], ['Funded YTD', v.fytd]];
-    const cell = ([l, val, signed, pct]) => `<div style="min-width:0">
-      <div class="el1" style="${TB(9.5, 800, ET.muted, 0.3)}">${esc(l.toUpperCase())}</div><div style="height:4px"></div>
-      <div class="el1" style="${TM(14, 900, signed ? F.delta(val) : ET.ink)}">${pct ? P(val) : (signed ? F.signed(val, 0) : N(val))}</div></div>`;
+    const yoyNeg = v.yoyVar < 0;
+    const yoyTone = F.delta(v.yoyVar);
+    const yoyRatio = v.pyYtd > 0 ? Math.max(0, Math.min(100, (v.ytd / v.pyYtd) * 100)) : 0;
+    const cells = isYoy
+      ? [[`Opened YTD (${yrs.cur})`, v.ytd], [`Prior Yr (${yrs.py})`, v.pyYtd], ['YoY Growth %', v.yoyPct, 1, 2], [`Funded YTD (${yrs.cur})`, v.fytd], [`Prior Yr Funded`, v.pyFytd], ['Funded YoY Var', v.fyoyVar, 1, 0, v.fyoyPct]]
+      : isFunded
+        ? [['Funded Today', v.fday], ['Funded MTD', v.fmtd], ['Target YTD', v.tytd], ['Variance YTD', v.vytd, 1], ['Ach % MTD', v.amtd, 0, 1], ['Opened YTD', v.ytd]]
+        : [['Opened Today', v.day], ['Opened MTD', v.mtd], ['Target YTD', v.tytd], ['Variance YTD', v.vytd, 1], ['Ach % MTD', v.amtd, 0, 1], ['Funded YTD', v.fytd]];
+    const cell = ([l, val, signed, pctMode, pipePct]) => {
+      const tone = signed && typeof val === 'number' ? F.delta(val) : ET.ink;
+      const txt = pctMode === 2 ? ntbSignedPct(val) : pctMode === 1 ? P(val) : (signed ? F.signed(val, 0) : N(val));
+      return `<div style="min-width:0">
+        <div class="el1" style="${TB(9.5, 800, ET.muted, 0.3)}">${esc(l.toUpperCase())}</div><div style="height:4px"></div>
+        <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:1px">
+          <span style="${TM(14, 900, tone)}">${txt}</span>${typeof pipePct === 'number' ? ntbYoYPipe(pipePct) : ''}
+        </div></div>`;
+    };
+
+    const headDisplay = isYoy
+      ? `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+          <div style="display:flex;align-items:baseline;gap:7px;min-width:0">
+            <span style="${TD(26, 800, yoyTone, -0.8)}">${F.signed(leadVal, 0)}</span>
+            <span style="${TB(10, 800, ET.muted)}">accounts</span>
+          </div>
+          <span class="badge-pct ${!yoyNeg ? 'over' : ''}" style="${yoyNeg ? `background:#FFF7ED;border:1px solid #FED7AA;color:${ET.negative}` : ''}">${yoyNeg ? '▼' : '▲'} ${ntbSignedPct(v.yoyPct)}</span>
+        </div>
+        <div style="${TB(10, 500, ET.muted)}margin-top:2px">as of ${F.date(vm.D.asOf)} · vs prior year YTD (${yrs.py})</div>
+        <div style="height:12px"></div>
+        <div style="display:flex;align-items:center"><span class="grow" style="${TB(10, 800, ET.muted, 0.3)}">VS PRIOR YEAR (${yrs.py})</span><span style="${TM(11, 700, ET.text2)}">${N(v.ytd)} vs ${N(v.pyYtd)}</span></div>
+        <div style="height:6px"></div><div style="height:5px;border-radius:999px;background:${ET.tile};overflow:hidden"><div style="height:5px;width:${yoyRatio}%;background:${yoyTone}"></div></div>`
+      : `<div style="display:flex;align-items:baseline;gap:7px"><span style="${TD(26, 800, ET.ink, -0.8)}">${N(leadVal)}</span><span style="${TB(10, 800, ET.muted)}">accounts</span></div>
+        <div style="${TB(10, 500, ET.muted)}margin-top:2px">as of ${F.date(vm.D.asOf)}</div>
+        <div style="height:12px"></div>
+        <div style="display:flex;align-items:center"><span class="grow" style="${TB(10, 800, ET.muted, 0.3)}">AGAINST TARGET</span><span class="badge-pct ${ach >= 100 ? 'over' : ''}">${P(ach)}</span></div>
+        <div style="height:6px"></div><div style="height:5px;border-radius:999px;background:${ET.tile};overflow:hidden"><div style="height:5px;width:${Math.max(0, Math.min(100, ach))}%;background:${meta.accent}"></div></div>`;
 
     o += `<div style="height:14px"></div><div class="esurf" style="border-radius:18px;padding:14px">
-      <div class="el1" style="${TB(10, 800, meta.accent, 0.4)}">${esc(meta.label.toUpperCase())} · ${esc((NTB_ROLE_LABEL[vm.s.role] || vm.s.role).toUpperCase())}</div>
+      <div class="el1" style="${TB(10, 800, isYoy ? yoyTone : meta.accent, 0.4)}">${esc(meta.label.toUpperCase())} · ${esc((NTB_ROLE_LABEL[vm.s.role] || vm.s.role).toUpperCase())}</div>
       <div style="height:2px"></div>
       <div class="el1" style="${TD(15, 700, ET.ink)}">${esc(where)}</div>
       <div class="el1" style="${TB(10.5, 600, ET.muted)}margin-top:1px">${esc(whereSub)}</div>
       <div style="height:10px"></div>
-      <div style="display:flex;align-items:baseline;gap:7px"><span style="${TD(26, 800, ET.ink, -0.8)}">${N(leadVal)}</span><span style="${TB(10, 800, ET.muted)}">accounts</span></div>
-      <div style="${TB(10, 500, ET.muted)}margin-top:2px">as of ${F.date(vm.D.asOf)}</div>
-      <div style="height:12px"></div>
-      <div style="display:flex;align-items:center"><span class="grow" style="${TB(10, 800, ET.muted, 0.3)}">AGAINST TARGET</span><span class="badge-pct ${ach >= 100 ? 'over' : ''}">${P(ach)}</span></div>
-      <div style="height:6px"></div><div style="height:5px;border-radius:999px;background:${ET.tile};overflow:hidden"><div style="height:5px;width:${Math.max(0, Math.min(100, ach))}%;background:${meta.accent}"></div></div>
+      ${headDisplay}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-top:14px">${cells.map(cell).join('')}</div>
     </div>`;
 
     /* Columns strip */
+    const tilePipe = k => (k === 'yoyVar' ? ntbYoYPipe(v.yoyPct) : k === 'fyoyVar' ? ntbYoYPipe(v.fyoyPct) : '');
     const tile = col => `<div style="min-width:136px;padding:10px 13px;background:#fff;border-radius:15px;border:1px solid ${ET.border};display:flex;flex-direction:column;justify-content:center;flex:none">
       <div class="el1" style="${TB(9.5, 800, ET.muted, 0.8)}">${esc(col.label.toUpperCase())}</div><div style="height:6px"></div>
-      <div class="el1" style="${TM(15, 800, col.signed ? F.delta(v[col.k]) : ET.ink)}">${col.signed ? F.signed(v[col.k], 0) : N(v[col.k])}</div></div>`;
+      <div style="display:flex;align-items:baseline;white-space:nowrap"><span style="${TM(15, 800, col.signed ? F.delta(v[col.k]) : ET.ink)}">${col.signed ? F.signed(v[col.k], 0) : N(v[col.k])}</span>${tilePipe(col.k)}</div></div>`;
     o += `<div style="margin-top:10px"><div style="padding:2px 2px 8px;${TB(10.5, 600, ET.muted)}">NTB · ${esc(vm.pfLabel())} · workbook columns</div>
       <div class="colsbox"><div style="display:flex;gap:8px;width:max-content">${NTB_COLS.map(tile).join('')}</div></div></div>`;
 
     /* Chart */
     o += `<div style="height:8px"></div>` + ntbChartCard({
       title: where,
-      subtitle: `${rows.length > 8 ? `Top 8 ${level.label}s of ${rows.length} · ` : ''}dashed line is YTD target`,
+      subtitle: isYoy
+        ? `${rows.length > 8 ? `Top 8 ${level.label}s of ${rows.length} by YoY variance · ` : ''}${yrs.py} YTD vs ${yrs.cur} YTD`
+        : `${rows.length > 8 ? `Top 8 ${level.label}s of ${rows.length} · ` : ''}dashed line is YTD target`,
       rows, tabIndex: vm.s.graphTab, leadKey: vm.leadKey(),
-      stats: isFunded ? [['Today', v.fday], ['MTD', v.fmtd], ['YTD', v.fytd], ['Target', v.tytd]] : [['Today', v.day], ['MTD', v.mtd], ['YTD', v.ytd], ['Target', v.tytd]],
+      stats: isYoy
+        ? [['PY YTD', v.pyYtd], ['Cur YTD', v.ytd], ['YoY Var', v.yoyVar, 1], ['Target', v.tytd]]
+        : isFunded
+          ? [['Today', v.fday], ['MTD', v.fmtd], ['YTD', v.fytd], ['Target', v.tytd]]
+          : [['Today', v.day], ['MTD', v.mtd], ['YTD', v.ytd], ['Target', v.tytd]],
     }, charts) + `<div style="height:12px"></div>`;
 
-    /* Entity board accordions (Top 10 + Behind target) */
+    /* Entity board accordions */
     const top = list.slice().sort((a, b) => (b.m[vm.s.role][vm.leadKey()] || 0) - (a.m[vm.s.role][vm.leadKey()] || 0)).slice(0, 10);
-    o += accordionCard({
-      id: 'top', title: vm.s.pf === 'DS' ? 'Top 10 officers' : `Top ${Math.min(10, list.length)} branches`,
-      subtitle: `${meta.label} · year to date`,
-      leadValue: top.length ? top[0].m[vm.s.role][vm.leadKey()] : 0, leadCaption: vm.s.pf === 'DS' ? 'Top officer' : 'Biggest branch', leadIsCount: true,
-      footer: `${F.count(list.length)} ${vm.s.pf === 'DS' ? 'officers' : 'branches'} in view`,
-      rows: top.map(b => ({ title: b.name, subtitle: `${b.code} · ${b.area}`, value: b.m[vm.s.role][vm.leadKey()], isCount: true, tip: vm.s.pf === 'DS' ? '' : EopData.whose(b.name) })),
-    }, vm.s.openAccordions.has('top')) + `<div style="height:10px"></div>`;
+    if (isYoy) {
+      const topLead = top.length ? top[0].m[vm.s.role].yoyVar : 0;
+      o += accordionCard({
+        id: 'top',
+        title: vm.s.pf === 'DS' ? `Top ${Math.min(10, list.length)} YoY officers` : `Top ${Math.min(10, list.length)} YoY gainers`,
+        subtitle: `YoY Variance · ${yrs.cur} vs ${yrs.py}`,
+        leadValue: topLead,
+        leadText: `<span style="color:${F.delta(topLead)}">${F.signed(topLead, 0)}</span>`,
+        leadCaption: vm.s.pf === 'DS' ? 'Top YoY officer' : 'Top YoY branch',
+        leadIsCount: true, negTone: true,
+        footer: `${F.count(list.length)} ${vm.s.pf === 'DS' ? 'officers' : 'branches'} in view`,
+        rows: top.map(b => {
+          const bm = b.m[vm.s.role];
+          return {
+            title: b.name, subtitle: `${b.code} · ${b.area}`, value: bm.yoyVar,
+            text: `<span style="color:${F.delta(bm.yoyVar)}">${F.signed(bm.yoyVar, 0)}</span>${ntbYoYPipe(bm.yoyPct)}`,
+            isCount: true, negTone: true, tip: vm.s.pf === 'DS' ? '' : EopData.whose(b.name),
+          };
+        }),
+      }, vm.s.openAccordions.has('top')) + `<div style="height:10px"></div>`;
 
-    const short = list.filter(b => b.m[vm.s.role].tytd && (b.m[vm.s.role][vm.leadKey()] || 0) - b.m[vm.s.role].tytd < 0)
-      .map(b => [b, (b.m[vm.s.role][vm.leadKey()] || 0) - b.m[vm.s.role].tytd]).sort((a, b) => a[1] - b[1]);
-    const shortTot = short.reduce((t, x) => t + x[1], 0);
-    o += accordionCard({
-      id: 'behind', title: 'Behind target',
-      subtitle: `${F.count(short.length)} of ${F.count(list.length)} ${vm.s.pf === 'DS' ? 'officers' : 'branches'} short of YTD target`,
-      leadValue: shortTot, leadCaption: 'Total shortfall', leadIsCount: true, negTone: true,
-      footer: 'Accounts short of target',
-      rows: short.slice(0, 6).map(([b, g]) => ({ title: b.name, subtitle: `${b.code} · ${b.area}`, value: g, isCount: true, negTone: true, tip: vm.s.pf === 'DS' ? '' : EopData.whose(b.name) })),
-    }, vm.s.openAccordions.has('behind')) + `<div style="height:12px"></div>`;
+      const decl = list.filter(b => (b.m[vm.s.role].yoyVar || 0) < 0)
+        .map(b => [b, b.m[vm.s.role].yoyVar]).sort((a, b) => a[1] - b[1]);
+      const declTot = decl.reduce((t, x) => t + x[1], 0);
+      o += accordionCard({
+        id: 'behind', title: 'Negative YoY',
+        subtitle: `${F.count(decl.length)} of ${F.count(list.length)} ${vm.s.pf === 'DS' ? 'officers' : 'branches'} below ${yrs.py} YTD`,
+        leadValue: declTot,
+        leadText: F.signed(declTot, 0),
+        leadCaption: 'Total YoY decline', leadIsCount: true, negTone: true,
+        footer: `Accounts below prior-year YTD (${yrs.py})`,
+        rows: decl.slice(0, 6).map(([b, g]) => {
+          const bm = b.m[vm.s.role];
+          return {
+            title: b.name, subtitle: `${b.code} · ${b.area}`, value: g,
+            text: `${F.signed(g, 0)}${ntbYoYPipe(bm.yoyPct)}`,
+            isCount: true, negTone: true, tip: vm.s.pf === 'DS' ? '' : EopData.whose(b.name),
+          };
+        }),
+      }, vm.s.openAccordions.has('behind')) + `<div style="height:12px"></div>`;
+    } else {
+      o += accordionCard({
+        id: 'top', title: vm.s.pf === 'DS' ? 'Top 10 officers' : `Top ${Math.min(10, list.length)} branches`,
+        subtitle: `${meta.label} · year to date`,
+        leadValue: top.length ? top[0].m[vm.s.role][vm.leadKey()] : 0, leadCaption: vm.s.pf === 'DS' ? 'Top officer' : 'Biggest branch', leadIsCount: true,
+        footer: `${F.count(list.length)} ${vm.s.pf === 'DS' ? 'officers' : 'branches'} in view`,
+        rows: top.map(b => ({ title: b.name, subtitle: `${b.code} · ${b.area}`, value: b.m[vm.s.role][vm.leadKey()], isCount: true, tip: vm.s.pf === 'DS' ? '' : EopData.whose(b.name) })),
+      }, vm.s.openAccordions.has('top')) + `<div style="height:10px"></div>`;
+
+      const short = list.filter(b => b.m[vm.s.role].tytd && (b.m[vm.s.role][vm.leadKey()] || 0) - b.m[vm.s.role].tytd < 0)
+        .map(b => [b, (b.m[vm.s.role][vm.leadKey()] || 0) - b.m[vm.s.role].tytd]).sort((a, b) => a[1] - b[1]);
+      const shortTot = short.reduce((t, x) => t + x[1], 0);
+      o += accordionCard({
+        id: 'behind', title: 'Behind target',
+        subtitle: `${F.count(short.length)} of ${F.count(list.length)} ${vm.s.pf === 'DS' ? 'officers' : 'branches'} short of YTD target`,
+        leadValue: shortTot, leadCaption: 'Total shortfall', leadIsCount: true, negTone: true,
+        footer: 'Accounts short of target',
+        rows: short.slice(0, 6).map(([b, g]) => ({ title: b.name, subtitle: `${b.code} · ${b.area}`, value: g, isCount: true, negTone: true, tip: vm.s.pf === 'DS' ? '' : EopData.whose(b.name) })),
+      }, vm.s.openAccordions.has('behind')) + `<div style="height:12px"></div>`;
+    }
 
     /* 4.6 Listing (tap-to-drill, NO inline tree) */
     const sortCols = [{ k: 'n', label: vm.s.pf === 'DS' ? 'Officers' : 'Branches' }, ...NTB_COLS];
@@ -886,14 +1136,19 @@ Routes['/ntb-report'] = () => {
         e.stopPropagation();
         const r = (ctx.roleRows || [])[+t.dataset.i]; if (!r) break;
         const v = r.v;
+        const yrs = ntbYears(vm);
         eopDetailSheet(`${r.role} · NTB Performance · ${r.where}`, [
           { name: 'HC ACT', value: r.hc, type: 'count' },
           { name: 'Opened Today', value: v.day, type: 'count' },
           { name: 'Opened MTD', value: v.mtd, type: 'count' },
           { name: 'Opened YTD', value: v.ytd, type: 'count' },
+          { name: `Prior Year YTD (${yrs.py})`, value: v.pyYtd, type: 'count' },
+          { name: 'YoY Variance (Opened)', value: v.yoyVar, signed: true, html: `${F.signed(v.yoyVar, 0)}${ntbYoYPipe(v.yoyPct)}` },
           { name: 'Funded Today', value: v.fday, type: 'count' },
           { name: 'Funded MTD', value: v.fmtd, type: 'count' },
           { name: 'Funded YTD', value: v.fytd, type: 'count' },
+          { name: `Prior Year Funded (${yrs.py})`, value: v.pyFytd, type: 'count' },
+          { name: 'YoY Variance (Funded)', value: v.fyoyVar, signed: true, html: `${F.signed(v.fyoyVar, 0)}${ntbYoYPipe(v.fyoyPct)}` },
           { name: 'Target MTD', value: v.tmtd, type: 'count' },
           { name: 'Target YTD', value: v.tytd, type: 'count' },
           { name: 'Target Variance MTD', value: v.vmtd, type: 'count', signed: true },
@@ -924,9 +1179,15 @@ Routes['/ntb-report'] = () => {
       case 'details': {
         e.stopPropagation();
         const r = (ctx.rows || []).find(x => x.id === id); if (!r) break;
+        const pctFor = k => (k === 'yoyVar' ? r.m.yoyPct : k === 'fyoyVar' ? r.m.fyoyPct : null);
         eopDetailSheet(r.sub ? `${r.label} · ${r.sub}` : r.label, [
           { name: vm.s.pf === 'DS' ? 'Officers' : 'Branches', value: r.n, type: 'count' },
-          ...NTB_COLS.map(c => ({ name: c.label, value: r.m[c.k], type: 'count', signed: !!c.signed })),
+          ...NTB_COLS.map(c => {
+            const p = pctFor(c.k);
+            return p != null
+              ? { name: c.label, value: r.m[c.k], signed: true, html: `${F.signed(r.m[c.k], 0)}${ntbYoYPipe(p)}` }
+              : { name: c.label, value: r.m[c.k], type: 'count', signed: !!c.signed };
+          }),
           { name: 'Funded Today', value: r.m.fday, type: 'count' },
           { name: 'Ach % MTD', value: r.m.amtd, type: 'percent' },
           { name: 'Ach % YTD', value: r.m.aytd, type: 'percent' },
