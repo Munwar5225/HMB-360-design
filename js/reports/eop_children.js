@@ -764,12 +764,10 @@ function showFlowBranchSheet(item) {
   const rowsHtml = customers.length
     ? customers.map((c, i) => {
         const amt = Math.abs(c.v || 0);
-        return `${i ? `<div style="height:1px;background:${ET.grid}"></div>` : ''}<div class="fl-row" data-act="flbranchclient" data-ci="${i}">
+        return `${i ? `<div style="height:1px;background:${ET.grid}"></div>` : ''}<div style="padding:10px 0;display:flex;align-items:center;gap:8px">
           <span style="width:22px;height:22px;border-radius:8px;background:${tint};border:1px solid ${bdr};display:inline-flex;align-items:center;justify-content:center;${TM(11, 800, accent)}flex:none">${i + 1}</span>
           <div class="el2 grow" style="${TB(13, 600, ET.ink)}">${esc(c.name)}</div>
-          <span class="infobtn" title="Customer Details">${I('info_outline', 'f', 16, 'currentColor')}</span>
           <span style="${TM(13, 800, accent)}white-space:nowrap">${signStr}${F.number(amt)}</span>
-          ${I('chevron_right', 'r', 16, ET.muted)}
         </div>`;
       }).join('')
     : `<div style="padding:14px 0;text-align:center;${TB(11.5, 600, ET.muted)}">No customer records for this branch</div>`;
@@ -802,37 +800,10 @@ function showFlowBranchSheet(item) {
         <span style="${TB(11, 600, ET.muted)}">Top ${customers.length} customers total</span>
         <span style="${TM(12, 800, accent)}white-space:nowrap">${signStr}${F.number(topSum)} ${esc(item.unit)}${branchPct != null ? ` (${F.percent(branchPct)})` : ''}</span>
       </div>` : ''}
-      <div style="margin-top:8px;${TB(10.5, 500, ET.muted, null, 15)}">Tap any customer to view Branch, Area, Cluster &amp; Region Head details.</div>
     </div>
   </div>`);
   const s = openSheet(content, { maxHeightPct: 0.82 });
-  content.addEventListener('click', e => {
-    const t = e.target.closest('[data-act]');
-    if (!t) return;
-    if (t.dataset.act === 'close') { s.close(); return; }
-    if (t.dataset.act === 'flbranchclient') {
-      const idx = +t.dataset.ci;
-      const c = customers[idx];
-      if (!c) return;
-      const amt = Math.abs(c.v || 0);
-      showFlowClientSheet({
-        seg: item.seg,
-        rbh: item.rbh,
-        perLbl: item.perLbl,
-        flow: item.flow,
-        unit: item.unit,
-        clientName: c.name,
-        amt: c.v,
-        rank: idx + 1,
-        totalRows: customers.length,
-        rankScope: 'Branch',
-        share: topSum > 0 ? (amt / topSum) * 100 : 0,
-        branchShare: branchAmt > 0 ? (amt / branchAmt) * 100 : null,
-        branchName: item.branchName,
-        meta,
-      });
-    }
-  });
+  content.querySelector('[data-act=close]').onclick = () => s.close();
 }
 
 function renderFlows(vm) {
