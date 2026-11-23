@@ -746,7 +746,9 @@ function showFlowBranchSheet(item) {
   const isSme = item.seg === 'SME';
   const accent = isOut ? ET.negative : ET.positive;
   const tint = isOut ? '#FFF7ED' : '#ECFDF5';
+  const tintSoft = isOut ? 'rgba(194,65,12,.06)' : 'rgba(4,120,87,.06)';
   const bdr = isOut ? '#FED7AA' : '#A7F3D0';
+  const barTrack = isOut ? '#FDECE2' : '#E6F4EE';
   const signStr = isOut ? '−' : '+';
   const branchAmt = Math.abs(item.branchAmt || 0);
   const customers = item.customers || [];
@@ -764,45 +766,70 @@ function showFlowBranchSheet(item) {
   const rowsHtml = customers.length
     ? customers.map((c, i) => {
         const amt = Math.abs(c.v || 0);
-        return `${i ? `<div style="height:1px;background:${ET.grid}"></div>` : ''}<div style="padding:10px 0;display:flex;align-items:center;gap:8px">
-          <span style="width:22px;height:22px;border-radius:8px;background:${tint};border:1px solid ${bdr};display:inline-flex;align-items:center;justify-content:center;${TM(11, 800, accent)}flex:none">${i + 1}</span>
-          <div class="el2 grow" style="${TB(13, 600, ET.ink)}">${esc(c.name)}</div>
-          <span style="${TM(13, 800, accent)}white-space:nowrap">${signStr}${F.number(amt)}</span>
+        const sharePct = branchAmt > 0 ? Math.min(100, (amt / branchAmt) * 100) : (topSum > 0 ? (amt / topSum) * 100 : 0);
+        const barW = sharePct > 0 ? Math.max(3, sharePct) : 0;
+        const isTop = i === 0;
+        const badgeStyle = isTop
+          ? `background:${accent};color:#fff;box-shadow:0 2px 6px ${isOut ? 'rgba(194,65,12,.28)' : 'rgba(4,120,87,.28)'}`
+          : `background:${tint};border:1px solid ${bdr};color:${accent}`;
+        return `${i ? `<div style="height:1px;background:#EFF3F1;margin:0 18px"></div>` : ''}
+        <div style="padding:10px 18px;display:flex;align-items:center;gap:12px">
+          <span style="width:26px;height:26px;border-radius:9px;${badgeStyle};display:inline-flex;align-items:center;justify-content:center;${TM(11.5, 800, isTop ? '#fff' : accent)}flex:none">${i + 1}</span>
+          <div class="grow" style="min-width:0">
+            <div class="el2" style="${TB(13.5, isTop ? 700 : 600, ET.ink, null, 18)}">${esc(c.name)}</div>
+            <div style="margin-top:5px;display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:4px;border-radius:999px;background:${barTrack};overflow:hidden">
+                <div style="width:${barW.toFixed(1)}%;height:100%;border-radius:999px;background:${accent};opacity:${isTop ? '1' : '0.72'}"></div>
+              </div>
+              <span style="${TM(10.5, 600, ET.muted)}flex:none">${F.percent(sharePct)}</span>
+            </div>
+          </div>
+          <div style="text-align:right;flex:none;padding-left:4px">
+            <div style="${TM(14.5, 800, accent)}white-space:nowrap">${signStr}${F.number(amt)}</div>
+          </div>
         </div>`;
       }).join('')
-    : `<div style="padding:14px 0;text-align:center;${TB(11.5, 600, ET.muted)}">No customer records for this branch</div>`;
+    : `<div style="padding:20px 18px;text-align:center;${TB(12, 600, ET.muted)}">No customer records for this branch</div>`;
 
-  const content = h(`<div style="display:flex;flex-direction:column;min-height:0;max-height:inherit">
-    <div style="padding:16px 18px 14px;flex:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:${tint};border:1px solid ${bdr};${TB(10.5, 800, accent, 0.4)}">${isOut ? '↑' : '↓'} ${esc(item.flow.toUpperCase())} · ${esc(item.perLbl)}</span>
+  const content = h(`<div style="display:flex;flex-direction:column;min-height:0;max-height:inherit;background:#fff">
+    <div style="padding:9px 0 2px;display:flex;justify-content:center;flex:none">
+      <div style="width:36px;height:4px;border-radius:999px;background:#D5DDD8"></div>
+    </div>
+    <div style="padding:6px 18px 12px;flex:none">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div class="grow" style="min-width:0">
+          <div style="${TD(17, 800, ET.ink, -0.3)}">${esc(item.branchName)}</div>
+          <div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${subParts.length ? `<span style="${TB(11.5, 500, ET.muted)}">${esc(subParts.join(' · '))}</span>` : ''}
+            <span style="padding:2px 7px;border-radius:999px;background:${ET.tile};${TB(10, 700, ET.text2)}">${esc(item.perLbl)}</span>
+          </div>
+        </div>
         <div data-act="close" style="width:30px;height:30px;border-radius:50%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none">${I('close', 'r', 16, '#0E1512')}</div>
       </div>
-      <div style="margin-top:10px;${TD(16, 800, ET.ink, -0.2)}">${esc(item.branchName)}</div>
-      <div style="margin-top:5px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <span style="${TB(11.5, 500, ET.muted)}">${esc(subParts.join(' · '))}</span>
-        <span style="${TM(13, 800, accent)}white-space:nowrap">${signStr}${F.number(branchAmt)} ${esc(item.unit)}</span>
-      </div>
-    </div>
-    <div style="height:1px;background:#E9EEEB;flex:none"></div>
-    <div class="scroll" style="padding:14px 18px 22px">
-      <div class="esurf" style="border-radius:16px;overflow:hidden">
-        <div style="padding:10px 14px;background:${tint};border-bottom:1px solid ${bdr};display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="${TB(11, 800, accent, 0.5)}">${isOut ? '↑' : '↓'} ${esc(item.flow.toUpperCase())}</span>
-            <span style="${TB(11, 700, ET.text2)}">· Top ${customers.length} Customers</span>
+      <div style="margin-top:10px;padding:10px 14px;border-radius:14px;background:linear-gradient(135deg,${tint} 0%,${tintSoft} 100%);border:1px solid ${bdr};display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <div style="${TB(9.5, 800, ET.muted, 0.7)}">BRANCH TOTAL</div>
+          <div style="margin-top:2px;display:flex;align-items:baseline;gap:5px">
+            <span style="${TM(19, 800, accent)}">${signStr}${F.number(branchAmt)}</span>
+            <span style="${TB(10.5, 600, ET.muted)}">${esc(item.unit)}</span>
           </div>
-          <span style="${TB(10, 700, ET.muted)}">${esc(item.unit)}</span>
         </div>
-        <div style="padding:2px 14px 6px">${rowsHtml}</div>
+        ${customers.length ? `<div style="text-align:right">
+          <div style="${TB(9.5, 800, ET.muted, 0.7)}">TOP ${customers.length} SHARE</div>
+          <div style="margin-top:2px;display:flex;align-items:baseline;justify-content:flex-end;gap:5px">
+            <span style="${TM(14, 800, ET.ink)}">${branchPct != null ? F.percent(branchPct) : '—'}</span>
+            <span style="${TM(11, 700, accent)}">${signStr}${F.number(topSum)}</span>
+          </div>
+        </div>` : ''}
       </div>
-      ${customers.length ? `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${ET.tile};display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <span style="${TB(11, 600, ET.muted)}">Top ${customers.length} customers total</span>
-        <span style="${TM(12, 800, accent)}white-space:nowrap">${signStr}${F.number(topSum)} ${esc(item.unit)}${branchPct != null ? ` (${F.percent(branchPct)})` : ''}</span>
-      </div>` : ''}
     </div>
+    <div style="padding:5px 18px 7px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #EFF3F1;flex:none">
+      <span style="${TB(10, 800, ET.muted, 0.8)}">TOP ${customers.length || 5} CUSTOMERS</span>
+      <span style="${TB(10, 700, ET.muted)}">${esc(item.unit)}</span>
+    </div>
+    <div class="scroll" style="padding:2px 0 14px">${rowsHtml}</div>
   </div>`);
-  const s = openSheet(content, { maxHeightPct: 0.82 });
+  const s = openSheet(content, { maxHeightPct: 0.86 });
   content.querySelector('[data-act=close]').onclick = () => s.close();
 }
 
