@@ -222,6 +222,9 @@ body.mobile-full{--sb:0px;--nav:0px}
 .pillbtn:active{filter:brightness(.95)}
 .infobtn{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;color:var(--eMuted);background:transparent;border:0;padding:0}
 .infobtn:active{background:rgba(4,120,87,.1);color:var(--ePrimary)}
+.fl-row{padding:10px 6px;margin:0 -6px;border-radius:10px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:background .12s}
+.fl-row:hover{background:#F6F9F7}
+.fl-row:active{background:#EBF2EE}
 .gp{font-family:var(--fMono);font-size:11px;font-weight:700;color:var(--ePos);white-space:nowrap}
 .gp.neg{color:var(--eNeg)}
 .gp i{font-style:normal;color:#CBD5CE;margin:0 4px;font-weight:400}

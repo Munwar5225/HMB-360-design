@@ -343,6 +343,122 @@ function renderMovement(vm) {
 /* ---------------- 3.2 Inflow / Outflow (Retail & SME, strictly separate) ---------------- */
 const FL_PERIODS = [{ k: 'odc', label: 'ODC' }, { k: 'mtd', label: 'MTD' }, { k: 'ytd', label: 'YTD' }];
 const SME_FL_TOP = { odc: [26, 18], mtd: [115, 80], ytd: [430, 300] };
+const FL_CLIENT_POOL = [
+  'INDUS VALLEY TEXTILES (PVT) LTD',
+  'CRESCENT AGRO TRADERS',
+  'AL-MADINA FLOUR & GENERAL MILLS',
+  'MEHRAN STEEL & RE-ROLLING MILLS',
+  'NATIONAL PHARMA DISTRIBUTORS',
+  'PAK ARAB LOGISTICS (PVT) LTD',
+  'CHENAB FEED INDUSTRIES',
+  'SILVER AGRI COMMODITIES',
+  'SUMMIT ENGINEERING WORKS',
+  'ZAM ZAM RICE EXPORTERS',
+  'RAVI PACKAGING & POLYMERS',
+  'SULTAN CHEMICALS & DYES',
+  'FAISAL COTTON GINNING FACTORY',
+  'KOHINOOR BUILDERS & DEVELOPERS',
+  'AL-HARAM TRADING CORPORATION',
+  'AL-BARAKA COLD STORAGE & FOODS',
+  'MERIDIAN FREIGHT SERVICES',
+  'APEX AUTO PARTS SYNDICATE',
+  'HORIZON SOLAR ENERGY (PVT) LTD',
+  'GANDHARA MEDICAL SUPPLIES',
+  'ORIENT LEATHER & GARMENTS',
+  'SHALIMAR PAPER & BOARD MILLS',
+  'DELTA DIAGNOSTIC LABORATORIES',
+  'PLATINUM MARBLE & GRANITE',
+  'EVERGREEN FERTILIZER DEALERS',
+  'DECCAN SUGAR & ALLIED TRADERS',
+  'UNITED TEXTILE WEAVING MILLS',
+  'STAR POULTRY & HATCHERIES',
+  'PAKISTAN DAIRY PRODUCTS (PVT) LTD',
+  'GLOBAL PETROLEUM CARRIERS',
+  'CLASSIC CERAMICS & TILES',
+  'NORTHERN HARDWARE & TOOLS',
+  'GREENLAND SEEDS & PESTICIDES',
+  'PRIME SURGICAL INSTRUMENTS',
+  'PREMIER ENGINEERING ASSOCIATES',
+  'SILK ROUTE IMPORT & EXPORT',
+  'NATIONAL GRAIN MERCHANTS',
+  'DIAMOND FOUNDRY WORKS',
+  'ROYAL SPORTS MANUFACTURING CO',
+  'GOLDEN DRY FRUITS SYNDICATE',
+  'CHAUDHRY MUHAMMAD SALEEM',
+  'SYED WAQAR HUSSAIN SHAH',
+  'MALIK TARIQ MAHMOOD',
+  'RANA IMRAN ASHRAF',
+  'HAJI MUHAMMAD AKRAM & SONS',
+  'SHEIKH ZAHID MEHMOOD',
+  'MIAN KASHIF NADEEM',
+  'SARDAR FAROOQ AHMED KHAN',
+  'KHWAJA SALMAN RASHEED',
+  'DR. NAVEED ANWAR QURESHI',
+  'HAFIZ MUHAMMAD BILAL',
+  'MIRZA KAMRAN BAIG',
+  'QAZI ASADULLAH SIDDIQUI',
+  'CHAUDHRY SAJID ALI',
+  'SYED FAISAL ABBAS RIZVI',
+  'MUHAMMAD USMAN GHANI',
+  'ZAFAR IQBAL & CO',
+  'AL-NOOR OIL & GHEE MILLS',
+  'ALLIED TRACTOR IMPLEMENTS',
+  'SILVER LINE APPAREL (PVT) LTD',
+  'HARVEST FOODS & BEVERAGES',
+  'ATLAS CABLE & ELECTRIC CO',
+  'METROPOLITAN REALTY GROUP',
+  'PIONEER CONSTRUCTION SERVICES',
+];
+const _flHeadCache = new Map();
+let _flBranchIdx = null;
+let _flActionStore = { branches: [], clients: [] };
+
+function flBranchByName(name, seg) {
+  if (!name) return null;
+  if (!_flBranchIdx) {
+    const byExact = new Map();
+    const bySegLc = new Map();
+    const byAnyLc = new Map();
+    const list = EopData.get().branches;
+    list.forEach(b => {
+      if (!b.name) return;
+      const lc = b.name.toLowerCase();
+      if (!byExact.has(b.name)) byExact.set(b.name, b);
+      if (!bySegLc.has(b.segment + '|' + lc)) bySegLc.set(b.segment + '|' + lc, b);
+      if (!byAnyLc.has(lc)) byAnyLc.set(lc, b);
+    });
+    _flBranchIdx = { byExact, bySegLc, byAnyLc, list };
+  }
+  const lc = String(name).trim().toLowerCase();
+  if (seg && _flBranchIdx.bySegLc.has(seg + '|' + lc)) return _flBranchIdx.bySegLc.get(seg + '|' + lc);
+  if (_flBranchIdx.byExact.has(name)) return _flBranchIdx.byExact.get(name);
+  if (_flBranchIdx.byAnyLc.has(lc)) return _flBranchIdx.byAnyLc.get(lc);
+  const pfx = lc.slice(0, 22);
+  if (pfx.length >= 12) {
+    const hit = _flBranchIdx.list.find(b => {
+      if (seg && b.segment !== seg) return false;
+      const blc = b.name.toLowerCase();
+      return blc.startsWith(pfx) || lc.startsWith(blc.slice(0, 22));
+    });
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function flBranchTip(name, seg) {
+  const existing = EopData.whose(name);
+  if (existing) return existing;
+  const b = flBranchByName(name, seg);
+  if (!b) return '';
+  const bits = [];
+  if (b.area) bits.push('Area: ' + b.area);
+  if (b.ah && seg !== 'SME') bits.push('Area Head: ' + b.ah);
+  if (b.cm && seg !== 'SME') bits.push('Cluster Manager: ' + b.cm);
+  if (b.hm) bits.push('Hub Manager: ' + b.hm);
+  if (seg === 'SME' ? b.rbhSme : b.rbh) bits.push((seg === 'SME' ? 'RBH-SME: ' : 'RBH: ') + (seg === 'SME' ? b.rbhSme : b.rbh));
+  if (b.type) bits.push(b.type);
+  return bits.join('\n');
+}
 
 function smeFlowsCut(vm) {
   const sc = EopData.childScope(vm.s.role);
@@ -358,30 +474,36 @@ function smeFlowsCut(vm) {
     rbh,
     periods: FL_PERIODS.map(p => {
       const top = SME_FL_TOP[p.k] || [30, 20];
-      return {
-        k: p.k, label: p.label,
-        blocks: [
-          ['brIn', 'Branch', 'Inflow', 1], ['clIn', 'Client', 'Inflow', 1],
-          ['brOut', 'Branch', 'Outflow', -1], ['clOut', 'Client', 'Outflow', -1],
-        ].map(([kind, side, flow, sign]) => {
-          const rnd = seedRand(`fl|${rbh}|${p.k}|${kind}`);
-          const pool = side === 'Branch' ? names.slice() : null;
-          const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split('');
-          const rows = [];
-          for (let i = 0; i < 5; i++) {
-            let nm;
-            if (pool) {
-              if (!pool.length) break;
-              nm = pool.splice(Math.floor(rnd() * pool.length), 1)[0];
-            } else {
-              nm = `SME Client ${letters.splice(Math.floor(rnd() * letters.length), 1)[0]}`;
-            }
-            rows.push({ name: nm, v: Math.round(top[side === 'Branch' ? 0 : 1] * (0.35 + rnd() * 0.85)) * sign });
-          }
-          rows.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
-          return { kind, side, flow, rows };
-        }),
-      };
+      const blocks = [];
+      [['Inflow', 1, 'brIn', 'clIn'], ['Outflow', -1, 'brOut', 'clOut']].forEach(([flow, sign, brKind, clKind]) => {
+        const brRnd = seedRand(`fl|${rbh}|${p.k}|${brKind}`);
+        const pool = names.slice();
+        const brRows = [];
+        for (let i = 0; i < 5; i++) {
+          if (!pool.length) break;
+          const nm = pool.splice(Math.floor(brRnd() * pool.length), 1)[0];
+          const val = Math.max(1, Math.round(top[0] * (0.35 + brRnd() * 0.85)));
+          brRows.push({ name: nm, v: val * sign });
+        }
+        brRows.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+
+        const clRnd = seedRand(`fl|${rbh}|${p.k}|${clKind}`);
+        const clientNames = FL_CLIENT_POOL.slice(0, 40);
+        const maxBr = brRows.length ? Math.abs(brRows[0].v) : top[0];
+        const clRows = [];
+        for (let i = 0; i < 5; i++) {
+          const nm = clientNames.splice(Math.floor(clRnd() * clientNames.length), 1)[0];
+          const raw = Math.round(top[1] * (0.35 + clRnd() * 0.85));
+          const cap = brRows[i] ? Math.max(1, Math.round(Math.abs(brRows[i].v) * 0.78)) : Math.max(1, Math.round(maxBr * 0.78));
+          const val = Math.max(1, Math.min(raw, cap));
+          clRows.push({ name: nm, v: val * sign });
+        }
+        clRows.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+
+        blocks.push({ kind: brKind, side: 'Branch', flow, rows: brRows });
+        blocks.push({ kind: clKind, side: 'Client', flow, rows: clRows });
+      });
+      return { k: p.k, label: p.label, blocks };
     }),
   }));
   const base = WEB_DATA.eop_flows || {};
@@ -395,6 +517,322 @@ function flCut(vm) {
   const sc = EopData.childScope(vm.s.role);
   if (!sc) return d;
   return { ...d, heads: (d.heads || []).filter(h => !!sc.rbhs[h.rbh]) };
+}
+
+function flBuildHeadModel(seg, head) {
+  const sig = (head.periods || []).map(p => p.k + ':' + (p.blocks || []).map(b => (b.rows || []).map(r => r.name + '=' + r.v).join(',')).join(';')).join('|');
+  const cacheKey = `${seg}|${head.rbh}|${sig}`;
+  if (_flHeadCache.has(cacheKey)) return _flHeadCache.get(cacheKey);
+
+  const isSme = seg === 'SME';
+  const headBranches = EopData.get().branches
+    .filter(b => b.segment === seg && (isSme ? b.rbhSme : b.rbh) === head.rbh)
+    .map(b => b.name);
+
+  const existingClientNames = new Set();
+  (head.periods || []).forEach(p => (p.blocks || []).forEach(b => {
+    if (b.side === 'Client') (b.rows || []).forEach(r => existingClientNames.add(r.name));
+  }));
+
+  const clientBranchMap = new Map();
+  const orderedPeriods = ['ytd', 'mtd', 'odc']
+    .map(k => (head.periods || []).find(p => p.k === k))
+    .filter(Boolean);
+  (head.periods || []).forEach(p => { if (!orderedPeriods.includes(p)) orderedPeriods.push(p); });
+
+  orderedPeriods.forEach(p => {
+    const bmap = Object.fromEntries((p.blocks || []).map(b => [b.kind, b.rows || []]));
+    [['brIn', 'clIn', 'Inflow'], ['brOut', 'clOut', 'Outflow']].forEach(([bk, ck, flow]) => {
+      const brRows = bmap[bk] || [];
+      const clRows = bmap[ck] || [];
+      const remCap = new Map(brRows.map(b => [b.name, Math.abs(b.v || 0)]));
+      const usedCount = new Map(brRows.map(b => [b.name, 0]));
+      const rnd = seedRand(`flmap|${seg}|${head.rbh}|${p.k}|${flow}`);
+
+      clRows.forEach(c => {
+        const camt = Math.abs(c.v || 0);
+        if (c.branch) {
+          clientBranchMap.set(c.name, c.branch);
+          if (remCap.has(c.branch)) {
+            remCap.set(c.branch, Math.max(0, remCap.get(c.branch) - camt));
+            usedCount.set(c.branch, (usedCount.get(c.branch) || 0) + 1);
+          }
+          return;
+        }
+        if (clientBranchMap.has(c.name)) {
+          const prev = clientBranchMap.get(c.name);
+          if (remCap.has(prev) && remCap.get(prev) >= camt) {
+            remCap.set(prev, Math.max(0, remCap.get(prev) - camt));
+            usedCount.set(prev, (usedCount.get(prev) || 0) + 1);
+          }
+          return;
+        }
+        const pickFrom = list => list[Math.floor(rnd() * list.length)];
+        let cands = brRows.filter(b => (usedCount.get(b.name) || 0) === 0 && (remCap.get(b.name) || 0) >= camt * 1.05);
+        if (!cands.length) cands = brRows.filter(b => (usedCount.get(b.name) || 0) === 0 && (remCap.get(b.name) || 0) >= camt);
+        if (!cands.length) cands = brRows.filter(b => (remCap.get(b.name) || 0) >= camt);
+        if (!cands.length) cands = brRows.filter(b => Math.abs(b.v || 0) >= camt);
+
+        let chosen = '';
+        if (cands.length) {
+          chosen = cands[0].name;
+        } else if (brRows.length) {
+          chosen = pickFrom(brRows).name;
+        } else if (headBranches.length) {
+          chosen = pickFrom(headBranches);
+        }
+        if (chosen) {
+          clientBranchMap.set(c.name, chosen);
+          if (remCap.has(chosen)) {
+            remCap.set(chosen, Math.max(0, remCap.get(chosen) - camt));
+            usedCount.set(chosen, (usedCount.get(chosen) || 0) + 1);
+          }
+        }
+      });
+    });
+  });
+
+  const branchCustomersMap = new Map();
+  (head.periods || []).forEach(p => {
+    const bmap = Object.fromEntries((p.blocks || []).map(b => [b.kind, b.rows || []]));
+    [['brIn', 'clIn', 'Inflow', 1], ['brOut', 'clOut', 'Outflow', -1]].forEach(([bk, ck, flow, sign]) => {
+      const brRows = bmap[bk] || [];
+      const clRows = bmap[ck] || [];
+      const minRegClient = clRows.length >= 5
+        ? Math.min(...clRows.map(c => Math.abs(c.v || 0)).filter(x => x > 0))
+        : Infinity;
+      const usedInFlow = new Set();
+
+      brRows.forEach(bRow => {
+        const key = `${p.k}|${flow}|${bRow.name}`;
+        if (Array.isArray(bRow.customers) && bRow.customers.length) {
+          branchCustomersMap.set(key, bRow.customers.slice(0, 5));
+          return;
+        }
+        const brAmt = Math.abs(bRow.v || 0);
+        const list = [];
+        let linkedSum = 0;
+        clRows.forEach(c => {
+          const mapped = c.branch || clientBranchMap.get(c.name);
+          const camt = Math.abs(c.v || 0);
+          if (mapped === bRow.name && list.length < 5 && linkedSum + camt <= brAmt * 1.001) {
+            list.push({ name: c.name, v: camt * sign, linked: true });
+            linkedSum += camt;
+          }
+        });
+
+        const need = Math.max(0, 5 - list.length);
+        const rem = Math.max(0, brAmt - linkedSum);
+        if (need > 0 && rem > 0) {
+          const rnd = seedRand(`flbr|${seg}|${head.rbh}|${p.k}|${flow}|${bRow.name}`);
+          const minLinked = list.length ? Math.min(...list.map(x => Math.abs(x.v))) : Infinity;
+          const capVal = Math.min(rem, minRegClient * 0.92, minLinked * 0.92);
+          const weights = [];
+          for (let i = 0; i < need; i++) {
+            weights.push(Math.pow(0.68 + rnd() * 0.14, i) * (0.85 + rnd() * 0.3));
+          }
+          weights.sort((a, b) => b - a);
+          const wSum = weights.reduce((s, w) => s + w, 0) || 1;
+          const desiredRatio = 0.72 + rnd() * 0.16;
+          let vals = weights.map(w => (w / wSum) * rem * desiredRatio);
+          if (Number.isFinite(capVal) && capVal > 0) {
+            vals = vals.map(v => Math.min(v, capVal));
+          }
+          const vSum = vals.reduce((s, v) => s + v, 0);
+          if (vSum > rem && vSum > 0) {
+            const k = (rem * 0.96) / vSum;
+            vals = vals.map(v => v * k);
+          }
+          vals = vals.map(v => Math.max(0.01, Math.round(v * 100) / 100)).sort((a, b) => b - a);
+
+          const usedNames = new Set(list.map(x => x.name));
+          const avail = FL_CLIENT_POOL.filter(nm => !usedNames.has(nm) && !usedInFlow.has(nm) && !existingClientNames.has(nm));
+          const fallbackPool = FL_CLIENT_POOL.filter(nm => !usedNames.has(nm) && !existingClientNames.has(nm));
+          const pool = avail.length >= need ? avail.slice() : (fallbackPool.length >= need ? fallbackPool.slice() : FL_CLIENT_POOL.filter(nm => !usedNames.has(nm)));
+
+          for (let i = 0; i < need; i++) {
+            const nm = pool.length
+              ? pool.splice(Math.floor(rnd() * pool.length), 1)[0]
+              : `ACCOUNT HOLDER ${i + 1}`;
+            usedInFlow.add(nm);
+            list.push({ name: nm, v: vals[i] * sign, linked: false });
+          }
+        }
+        list.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+        branchCustomersMap.set(key, list);
+      });
+    });
+  });
+
+  const model = { clientBranchMap, branchCustomersMap };
+  _flHeadCache.set(cacheKey, model);
+  return model;
+}
+
+function showFlowClientSheet(item) {
+  if (!item) return;
+  const isOut = item.flow === 'Outflow';
+  const isSme = item.seg === 'SME';
+  const accent = isOut ? ET.negative : ET.positive;
+  const tint = isOut ? '#FFF7ED' : '#ECFDF5';
+  const bdr = isOut ? '#FED7AA' : '#A7F3D0';
+  const signStr = isOut ? '−' : '+';
+  const amt = Math.abs(item.amt || 0);
+  const meta = item.meta || flBranchByName(item.branchName, item.seg);
+  const branchDisplay = (meta && meta.name) || item.branchName || 'Unassigned';
+
+  const detailRow = (label, value, valueHtml) => `<div style="padding:10px 0;border-bottom:1px solid #E9EEEB;display:flex;align-items:baseline;gap:12px">
+    <span style="font:600 12px var(--fBody);color:#62716A;flex:none">${esc(label)}</span>
+    <span style="font:700 13px var(--fBody);color:#0E1512;text-align:right;flex:1;min-width:0;word-break:break-word">${valueHtml != null ? valueHtml : esc(value)}</span></div>`;
+
+  let hierRows = detailRow('Branch', branchDisplay);
+  if (isSme) {
+    if (meta && (meta.area || meta.smeRegion)) hierRows += detailRow('Area', meta.area || meta.smeRegion);
+    if (meta && meta.hub) hierRows += detailRow('Cluster / Hub', meta.hub);
+    if (meta && meta.hm) hierRows += detailRow('Hub Manager', meta.hm);
+    if (meta && meta.region) hierRows += detailRow('Region', meta.region);
+    hierRows += detailRow('Region Head (RBH-SME)', (meta && meta.rbhSme) || item.rbh || 'Unassigned');
+  } else {
+    if (meta && meta.area) hierRows += detailRow('Area', meta.area);
+    if (meta && meta.ah) hierRows += detailRow('Area Head', meta.ah);
+    if (meta && meta.cmBranch) hierRows += detailRow('Cluster', meta.cmBranch);
+    if (meta && meta.cm) hierRows += detailRow('Cluster Manager', meta.cm);
+    if (meta && meta.region) hierRows += detailRow('Region', meta.region);
+    hierRows += detailRow('Region Head (RBH)', (meta && meta.rbh) || item.rbh || 'Unassigned');
+  }
+
+  let flowRows = detailRow(`${item.flow} · ${item.perLbl}`, '', `<span style="${TM(13, 800, accent)}">${signStr}${F.number(amt)} ${esc(item.unit)}</span>`);
+  if (item.rank && item.totalRows) {
+    flowRows += detailRow('Rank', `#${item.rank} of ${item.totalRows}${item.rankScope ? ` (${item.rankScope})` : ''}`);
+  }
+  if (typeof item.share === 'number' && !isNaN(item.share)) {
+    flowRows += detailRow(`Share of top ${item.totalRows || 5}`, F.percent(item.share));
+  }
+  if (typeof item.branchShare === 'number' && !isNaN(item.branchShare)) {
+    flowRows += detailRow('Share of branch', F.percent(item.branchShare));
+  }
+  const streamBadge = meta && meta.type
+    ? `<div style="margin-top:12px;display:inline-block;padding:4px 10px;border-radius:999px;background:#F1F5F2;font:700 11px var(--fBody);color:#31443A">${esc(meta.type)}</div>`
+    : '';
+
+  const content = h(`<div style="display:flex;flex-direction:column;min-height:0;max-height:inherit">
+    <div style="padding:18px 18px 14px;display:flex;align-items:center;gap:12px;flex:none">
+      <div style="width:34px;height:34px;border-radius:50%;background:${tint};border:1px solid ${bdr};display:flex;align-items:center;justify-content:center;flex:none">${I('person_outline', 'f', 18, accent)}</div>
+      <div class="grow" style="min-width:0">
+        <div class="el2" style="font:700 15px/19px var(--fBody);color:#0E1512">${esc(item.clientName)}</div>
+        <div style="margin-top:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="${TB(11, 700, accent)}">${isOut ? '↑' : '↓'} ${esc(item.flow)} · ${esc(item.perLbl)}</span>
+          <span style="${TM(12, 800, accent)}">${signStr}${F.number(amt)} ${esc(item.unit)}</span>
+        </div>
+      </div>
+      <div data-act="close" style="width:30px;height:30px;border-radius:50%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none">${I('close', 'r', 16, '#0E1512')}</div>
+    </div>
+    <div style="height:1px;background:#E9EEEB;flex:none"></div>
+    <div class="scroll" style="padding:12px 18px 22px">
+      <div style="${TB(9.5, 800, ET.muted, 0.7)}margin-bottom:4px">BRANCH &amp; HIERARCHY DETAILS</div>
+      ${hierRows}
+      <div style="${TB(9.5, 800, ET.muted, 0.7)}margin-top:14px;margin-bottom:4px">${esc(item.flow.toUpperCase())} SUMMARY</div>
+      ${flowRows}
+      ${streamBadge}
+    </div>
+  </div>`);
+  const s = openSheet(content, { maxHeightPct: 0.78 });
+  content.querySelector('[data-act=close]').onclick = () => s.close();
+}
+
+function showFlowBranchSheet(item) {
+  if (!item) return;
+  const isOut = item.flow === 'Outflow';
+  const isSme = item.seg === 'SME';
+  const accent = isOut ? ET.negative : ET.positive;
+  const tint = isOut ? '#FFF7ED' : '#ECFDF5';
+  const bdr = isOut ? '#FED7AA' : '#A7F3D0';
+  const signStr = isOut ? '−' : '+';
+  const branchAmt = Math.abs(item.branchAmt || 0);
+  const customers = item.customers || [];
+  const meta = item.meta || flBranchByName(item.branchName, item.seg);
+  const topSum = customers.reduce((s, c) => s + Math.abs(c.v || 0), 0);
+  const branchPct = branchAmt > 0 ? Math.min(100, (topSum / branchAmt) * 100) : null;
+  const subParts = [];
+  if (meta && (meta.area || meta.smeRegion)) subParts.push(meta.area || meta.smeRegion);
+  if (isSme) {
+    if ((meta && meta.rbhSme) || item.rbh) subParts.push((meta && meta.rbhSme) || item.rbh);
+  } else if ((meta && meta.rbh) || item.rbh) {
+    subParts.push((meta && meta.rbh) || item.rbh);
+  }
+
+  const rowsHtml = customers.length
+    ? customers.map((c, i) => {
+        const amt = Math.abs(c.v || 0);
+        return `${i ? `<div style="height:1px;background:${ET.grid}"></div>` : ''}<div class="fl-row" data-act="flbranchclient" data-ci="${i}">
+          <span style="width:22px;height:22px;border-radius:8px;background:${tint};border:1px solid ${bdr};display:inline-flex;align-items:center;justify-content:center;${TM(11, 800, accent)}flex:none">${i + 1}</span>
+          <div class="el2 grow" style="${TB(13, 600, ET.ink)}">${esc(c.name)}</div>
+          <span class="infobtn" title="Customer Details">${I('info_outline', 'f', 16, 'currentColor')}</span>
+          <span style="${TM(13, 800, accent)}white-space:nowrap">${signStr}${F.number(amt)}</span>
+          ${I('chevron_right', 'r', 16, ET.muted)}
+        </div>`;
+      }).join('')
+    : `<div style="padding:14px 0;text-align:center;${TB(11.5, 600, ET.muted)}">No customer records for this branch</div>`;
+
+  const content = h(`<div style="display:flex;flex-direction:column;min-height:0;max-height:inherit">
+    <div style="padding:16px 18px 14px;flex:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:${tint};border:1px solid ${bdr};${TB(10.5, 800, accent, 0.4)}">${isOut ? '↑' : '↓'} ${esc(item.flow.toUpperCase())} · ${esc(item.perLbl)}</span>
+        <div data-act="close" style="width:30px;height:30px;border-radius:50%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none">${I('close', 'r', 16, '#0E1512')}</div>
+      </div>
+      <div style="margin-top:10px;${TD(16, 800, ET.ink, -0.2)}">${esc(item.branchName)}</div>
+      <div style="margin-top:5px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span style="${TB(11.5, 500, ET.muted)}">${esc(subParts.join(' · '))}</span>
+        <span style="${TM(13, 800, accent)}white-space:nowrap">${signStr}${F.number(branchAmt)} ${esc(item.unit)}</span>
+      </div>
+    </div>
+    <div style="height:1px;background:#E9EEEB;flex:none"></div>
+    <div class="scroll" style="padding:14px 18px 22px">
+      <div class="esurf" style="border-radius:16px;overflow:hidden">
+        <div style="padding:10px 14px;background:${tint};border-bottom:1px solid ${bdr};display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="${TB(11, 800, accent, 0.5)}">${isOut ? '↑' : '↓'} ${esc(item.flow.toUpperCase())}</span>
+            <span style="${TB(11, 700, ET.text2)}">· Top ${customers.length} Customers</span>
+          </div>
+          <span style="${TB(10, 700, ET.muted)}">${esc(item.unit)}</span>
+        </div>
+        <div style="padding:2px 14px 6px">${rowsHtml}</div>
+      </div>
+      ${customers.length ? `<div style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${ET.tile};display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span style="${TB(11, 600, ET.muted)}">Top ${customers.length} customers total</span>
+        <span style="${TM(12, 800, accent)}white-space:nowrap">${signStr}${F.number(topSum)} ${esc(item.unit)}${branchPct != null ? ` (${F.percent(branchPct)})` : ''}</span>
+      </div>` : ''}
+      <div style="margin-top:8px;${TB(10.5, 500, ET.muted, null, 15)}">Tap any customer to view Branch, Area, Cluster &amp; Region Head details.</div>
+    </div>
+  </div>`);
+  const s = openSheet(content, { maxHeightPct: 0.82 });
+  content.addEventListener('click', e => {
+    const t = e.target.closest('[data-act]');
+    if (!t) return;
+    if (t.dataset.act === 'close') { s.close(); return; }
+    if (t.dataset.act === 'flbranchclient') {
+      const idx = +t.dataset.ci;
+      const c = customers[idx];
+      if (!c) return;
+      const amt = Math.abs(c.v || 0);
+      showFlowClientSheet({
+        seg: item.seg,
+        rbh: item.rbh,
+        perLbl: item.perLbl,
+        flow: item.flow,
+        unit: item.unit,
+        clientName: c.name,
+        amt: c.v,
+        rank: idx + 1,
+        totalRows: customers.length,
+        rankScope: 'Branch',
+        share: topSum > 0 ? (amt / topSum) * 100 : 0,
+        branchShare: branchAmt > 0 ? (amt / branchAmt) * 100 : null,
+        branchName: item.branchName,
+        meta,
+      });
+    }
+  });
 }
 
 function renderFlows(vm) {
@@ -412,7 +850,6 @@ function renderFlows(vm) {
   const sub = `${seg} · ${unit}${childWho(vm)}`;
   if (!heads.length) return childSegToggleHtml(vm, seg) + childTopChrome(vm, title, sub) + childNoneHtml(vm, 'The Inflow / Outflow report');
 
-  /* LEVEL 1: Vertical full-width RBH / RBH-SME list */
   if (!picked) {
     let o = childSegToggleHtml(vm, seg) + childTopChrome(vm, title, sub);
     o += sectionHeading(isSme ? 'BY RBH-SME · SME' : 'BY RBH · RETAIL', `${F.count(heads.length)} heads`);
@@ -437,9 +874,11 @@ function renderFlows(vm) {
     return o;
   }
 
-  /* LEVEL 2: Drilled into one RBH / RBH-SME -> ODC/MTD/YTD + 4 stacked top-5 cards */
   const per = (picked.periods || []).find(p => p.k === vm.s.flPeriod) || (picked.periods || [])[0];
   const perLbl = (FL_PERIODS.find(p => p.k === (per && per.k)) || { label: 'YTD' }).label;
+  const headModel = flBuildHeadModel(seg, picked);
+  _flActionStore = { branches: [], clients: [] };
+
   let o = contextPill(`${seg} · ${picked.rbh} · Inflow & Outflow${childWho(vm)}`);
 
   if (sc && sc.below) {
@@ -450,6 +889,7 @@ function renderFlows(vm) {
     const on = p.k === (per && per.k);
     return `<button type="button" data-act="flper" data-id="${p.k}" style="flex:1;height:38px;border-radius:12px;border:1px solid ${on ? ET.primary : ET.pillBorder};background:${on ? ET.primary : '#fff'};cursor:pointer;${TB(13, 700, on ? '#fff' : ET.ink)}">${esc(p.label)}</button>`;
   }).join('')}</div>`;
+  o += `<div style="padding:8px 2px 0;${TB(10.5, 500, ET.muted, null, 14)}">Tap a branch for its top 5 customers · tap a customer for branch, area, cluster &amp; region head details</div>`;
 
   const blocks = (per && per.blocks) || [];
   blocks.forEach(b => {
@@ -463,23 +903,61 @@ function renderFlows(vm) {
       ? rows.map((r, i) => {
           const amt = Math.abs(r.v || 0);
           const share = tot ? (amt / tot) * 100 : 0;
-          const tipLines = [];
+          const sep = i ? `<div style="height:1px;background:${ET.grid}"></div>` : '';
           if (b.side === 'Branch') {
-            const w = EopData.whose(r.name);
+            const meta = flBranchByName(r.name, seg);
+            const tipLines = [];
+            const w = flBranchTip(r.name, seg);
             if (w) tipLines.push(w);
-          } else {
-            tipLines.push(`Listed under: ${picked.rbh}`);
-          }
-          tipLines.push(`${b.flow} · ${perLbl}: ${isOut ? '−' : '+'}${F.number(amt)} ${unit}`);
-          tipLines.push(`Rank: ${i + 1} of ${rows.length}`);
-          tipLines.push(`Share of top ${rows.length}: ${F.percent(share)}`);
-          if (b.side === 'Client') tipLines.push(`(the file lists this client under that ${isSme ? 'RBH-SME' : 'RBH'} and names no branch or hub)`);
+            tipLines.push(`${b.flow} · ${perLbl}: ${isOut ? '−' : '+'}${F.number(amt)} ${unit}`);
+            tipLines.push(`Rank: ${i + 1} of ${rows.length}`);
+            tipLines.push(`Share of top ${rows.length}: ${F.percent(share)}`);
+            const customers = headModel.branchCustomersMap.get(`${per.k}|${b.flow}|${r.name}`) || [];
+            const bi = _flActionStore.branches.push({
+              seg,
+              rbh: picked.rbh,
+              perLbl,
+              flow: b.flow,
+              unit,
+              branchName: r.name,
+              branchAmt: r.v,
+              customers,
+              meta,
+            }) - 1;
 
-          return `<div style="padding:10px 0;${i ? `border-top:1px solid ${ET.grid};` : ''}display:flex;align-items:center;gap:8px">
+            return `${sep}<div class="fl-row" data-act="flbranch" data-idx="${bi}">
+              <span style="width:22px;height:22px;border-radius:8px;background:${tint};border:1px solid ${bdr};display:inline-flex;align-items:center;justify-content:center;${TM(11, 800, accent)}flex:none">${i + 1}</span>
+              <div class="el2 grow" style="${TB(13, 600, ET.ink)}">${esc(r.name)}</div>
+              ${infoBtn(r.name, tipLines.join('\n'))}
+              <span style="${TM(13, 800, accent)}white-space:nowrap">${isOut ? '−' : '+'}${F.number(amt)}</span>
+              ${I('chevron_right', 'r', 16, ET.muted)}
+            </div>`;
+          }
+
+          const branchName = r.branch || headModel.clientBranchMap.get(r.name) || '';
+          const meta = flBranchByName(branchName, seg);
+          const ci = _flActionStore.clients.push({
+            seg,
+            rbh: picked.rbh,
+            perLbl,
+            flow: b.flow,
+            unit,
+            clientName: r.name,
+            amt: r.v,
+            rank: i + 1,
+            totalRows: rows.length,
+            rankScope: isSme ? 'RBH-SME' : 'Region',
+            share,
+            branchName,
+            meta,
+          }) - 1;
+
+          return `${sep}<div class="fl-row" data-act="flclient" data-idx="${ci}">
             <span style="width:22px;height:22px;border-radius:8px;background:${tint};border:1px solid ${bdr};display:inline-flex;align-items:center;justify-content:center;${TM(11, 800, accent)}flex:none">${i + 1}</span>
             <div class="el2 grow" style="${TB(13, 600, ET.ink)}">${esc(r.name)}</div>
-            ${infoBtn(r.name, tipLines.join('\n'))}
+            <span class="infobtn" title="Customer Details">${I('info_outline', 'f', 16, 'currentColor')}</span>
             <span style="${TM(13, 800, accent)}white-space:nowrap">${isOut ? '−' : '+'}${F.number(amt)}</span>
+            ${I('chevron_right', 'r', 16, ET.muted)}
           </div>`;
         }).join('')
       : `<div style="padding:12px 0;text-align:center;${TB(11.5, 600, ET.muted)}">No records for this period</div>`;
@@ -1210,6 +1688,8 @@ function handleEopChildClick(vm, t) {
   if (act === 'mvcl') { vm.set({ mvCluster: id }); return true; }
   if (act === 'flhead') { vm.set({ flHead: id, flPeriod: 'ytd' }); return true; }
   if (act === 'flper') { vm.set({ flPeriod: id }); return true; }
+  if (act === 'flbranch') { showFlowBranchSheet(_flActionStore.branches[+t.dataset.idx]); return true; }
+  if (act === 'flclient') { showFlowClientSheet(_flActionStore.clients[+t.dataset.idx]); return true; }
   if (act === 'wowhead') { vm.set({ wowHead: id, wowAh: '', wowCluster: '' }); return true; }
   if (act === 'wowah') { vm.set({ wowAh: id, wowCluster: '' }); return true; }
   if (act === 'wowcl') { vm.set({ wowCluster: id }); return true; }
