@@ -2,11 +2,54 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=hmb_360_ui.html">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>HMB 360 — Mobile UI</title>
-<script>location.replace('hmb_360_ui.html');</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons|Material+Icons+Outlined|Material+Icons+Round" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles/app.css">
 </head>
 <body>
-<a href="hmb_360_ui.html">Open HMB 360 Mobile UI</a>
+<div class="page">
+  <div class="phone-wrap" id="phoneWrap">
+    <div class="phone">
+      <div class="screen">
+        <div class="app" id="app">
+          <div id="routes"></div>
+          <div id="snack-host"></div>
+          <div id="overlays"></div>
+        </div>
+        <div class="statusbar" id="statusbar">
+          <span id="sbTime">17:31</span>
+          <span class="icons">
+            <i class="mi mi-f" style="font-size:16px">signal_cellular_alt</i>
+            <i class="mi mi-f" style="font-size:16px">wifi</i>
+            <i class="mi mi-f" style="font-size:16px;transform:rotate(90deg)">battery_full</i>
+          </span>
+        </div>
+        <div class="navbar">
+          <button id="navBack" title="Back (Android hardware back)"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M14 2.5v13L3.5 9z" fill="none" stroke="#444" stroke-width="2" stroke-linejoin="round"/></svg></button>
+          <button id="navHome" title="Home"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="none" stroke="#444" stroke-width="2"/></svg></button>
+          <button id="navRecent" title="Recents"><svg width="18" height="18" viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" rx="1.5" fill="none" stroke="#444" stroke-width="2"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Core runtime & shared components -->
+<script src="js/core.js"></script>
+<script src="js/shared.js"></script>
+<script src="js/screens.js"></script>
+<script src="js/dashboard.js"></script>
+
+<!-- Reports (datasets lazy-load on demand from data/*.js) -->
+<script src="js/reports/eop.js"></script>
+<script src="js/reports/eop_children.js"></script>
+<script src="js/reports/ntb.js"></script>
+
+<!-- App bootstrap -->
+<script src="js/boot.js"></script>
 </body>
 </html>
