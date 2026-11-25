@@ -214,10 +214,6 @@ body.mobile-full{--sb:0px;--nav:0px}
 .acc:not(.open) .acc-body{visibility:hidden}
 .acc.open .acc-body{grid-template-rows:1fr;visibility:visible}
 .acc-body > div{overflow:hidden;min-height:0}
-.colsbox{overflow-x:auto;overflow-y:hidden;padding-bottom:10px;scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.28) transparent}
-.colsbox::-webkit-scrollbar{height:4px}
-.colsbox::-webkit-scrollbar-thumb{background:rgba(0,0,0,.28);border-radius:4px}
-.colsbox::-webkit-scrollbar-track{background:transparent}
 .pillbtn{width:32px;height:40px;border-radius:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;position:relative}
 .pillbtn:active{filter:brightness(.95)}
 .infobtn{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;color:var(--eMuted);background:transparent;border:0;padding:0}

@@ -930,16 +930,8 @@ Routes['/ntb-report'] = () => {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-top:14px">${cells.map(cell).join('')}</div>
     </div>`;
 
-    /* Columns strip */
-    const tilePipe = k => (k === 'yoyVar' ? ntbYoYPipe(v.yoyPct) : k === 'fyoyVar' ? ntbYoYPipe(v.fyoyPct) : '');
-    const tile = col => `<div style="min-width:136px;padding:10px 13px;background:#fff;border-radius:15px;border:1px solid ${ET.border};display:flex;flex-direction:column;justify-content:center;flex:none">
-      <div class="el1" style="${TB(9.5, 800, ET.muted, 0.8)}">${esc(col.label.toUpperCase())}</div><div style="height:6px"></div>
-      <div style="display:flex;align-items:baseline;white-space:nowrap"><span style="${TM(15, 800, col.signed ? F.delta(v[col.k]) : ET.ink)}">${col.signed ? F.signed(v[col.k], 0) : N(v[col.k])}</span>${tilePipe(col.k)}</div></div>`;
-    o += `<div style="margin-top:10px"><div style="padding:2px 2px 8px;${TB(10.5, 600, ET.muted)}">NTB · ${esc(vm.pfLabel())} · workbook columns</div>
-      <div class="colsbox"><div style="display:flex;gap:8px;width:max-content">${NTB_COLS.map(tile).join('')}</div></div></div>`;
-
     /* Chart */
-    o += `<div style="height:8px"></div>` + ntbChartCard({
+    o += `<div style="height:12px"></div>` + ntbChartCard({
       title: where,
       subtitle: isYoy
         ? `${rows.length > 8 ? `Top 8 ${level.label}s of ${rows.length} by YoY variance · ` : ''}${yrs.py} YTD vs ${yrs.cur} YTD`

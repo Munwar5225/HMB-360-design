@@ -785,36 +785,6 @@ function eopTotalsStrip(vm, list) {
   </div>`;
 }
 
-/* 2.6 Basis tiles split into two boxes: EOP and AVG */
-function eopBasisBoxes(vm, list) {
-  const metric = vm.s.metric, pct = EopData.isPct(metric);
-  const v = EopData.agg(list, metric);
-  const eopCols = [...EOP_DATE_KEYS, ...EOP_MOVES].map(EopData.colByKey).filter(Boolean);
-  const avgCols = pct ? [] : EOP_AVGS.map(EopData.colByKey).filter(Boolean);
-
-  const tile = col => {
-    const val = col.k === 'cur' ? vm.lead(v) : v[col.k];
-    const tone = col.signed && typeof val === 'number' ? F.delta(val) : ET.ink;
-    const txt = pct ? F.percent(val, 2) : (col.signed ? F.signed(val) : F.number(val));
-    return `<div style="min-width:142px;padding:11px 13px;background:#fff;border-radius:16px;border:1px solid ${ET.border};box-shadow:0 1px 2px rgba(16,24,20,.04);display:flex;flex-direction:column;justify-content:center;flex:none">
-      <div class="el1" style="${TB(9.5, 800, ET.muted, 0.8)}">${esc(col.label.toUpperCase())}</div>
-      <div style="height:6px"></div>
-      <div style="display:flex;align-items:baseline;white-space:nowrap">
-        <span style="${TM(15, 800, tone)}">${txt}</span>${EopData.growthPipe(v, col.k, pct)}
-      </div></div>`;
-  };
-  const box = (title, note, cols) => {
-    if (!cols.length) return '';
-    return `<div style="margin-top:10px">
-      <div style="padding:2px 2px 8px;${TB(10.5, 600, ET.muted, null, 14)}"><b style="color:${ET.text2}">${esc(title)}</b> · ${esc(note)}</div>
-      <div class="colsbox"><div style="display:flex;gap:8px;width:max-content;padding:1px 1px 2px 0">${cols.map(tile).join('')}</div></div>
-    </div>`;
-  };
-  const head = `${EopData.groupLabel(metric)} · ${vm.pfLabel()}`;
-  return box(`${head} · EOP`, 'closing balances and the movements', eopCols) +
-         box(`${head} · AVG`, 'the averaging block, YTD and MTD included', avgCols);
-}
-
 /* 2.11 Single balance chart on drill page (NO extra 2 stacked charts!) */
 function eopDrillChart(vm, list, rows, level, charts) {
   const metric = vm.s.metric, pct = EopData.isPct(metric);
@@ -1042,8 +1012,7 @@ Routes['/eop-report'] = () => {
     o += contextPill(pillText(EopData.groupLabel(vm.s.metric)));
     if (!list.length) return o + messageView('Nothing at this level for this selection.', 'Reset filters', 'reset');
     o += `<div style="height:14px"></div>${eopTotalsStrip(vm, list)}`;
-    o += eopBasisBoxes(vm, list);
-    o += `<div style="height:10px"></div>${eopDrillChart(vm, list, rows, level, charts)}`;
+    o += `<div style="height:12px"></div>${eopDrillChart(vm, list, rows, level, charts)}`;
     /* 2.8 Entity board at book level (country & segment) AND below */
     o += `<div style="height:12px"></div>${eopEntityBoard(vm, list)}`;
     /* Listing with 2.11 per-level CA headings & 2.1 columns */
