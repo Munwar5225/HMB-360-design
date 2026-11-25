@@ -848,7 +848,7 @@ function eopAvgPerBranchStrip(vm, list) {
   const book = EOP_BOOK_MAP[metric];
   const prodLbl = (book ? book.label : EopData.groupLabel(metric)).toUpperCase();
 
-  const cells = view.keys.map((k, idx) => {
+  const rowsHtml = view.keys.map((k, idx) => {
     const col = EopData.colByKey(k);
     const lbl = (col && col.label) || k;
     const raw = v[k];
@@ -856,16 +856,16 @@ function eopAvgPerBranchStrip(vm, list) {
     const txt = avg === null ? '–' : F.number(avg);
     const isLast = idx === view.keys.length - 1;
     const neg = avg !== null && avg < 0 && txt !== '0';
-    return `<div class="apb-cell">
-      <div class="apb-lbl">${esc(lbl)}</div>
-      <div class="apb-val${isLast ? ' cur' : ''}"${neg ? ` style="color:${ET.negative}"` : ''}>${txt}</div>
-    </div>`;
+    return `<tr${isLast ? ' class="cur"' : ''}>
+      <td>${esc(lbl)}</td>
+      <td${neg ? ` style="color:${ET.negative}"` : ''}>${txt}</td>
+    </tr>`;
   }).join('');
 
   return `<div data-slot="apb-strip" style="margin-top:4px">
     <div style="padding:0 2px;${TB(10, 800, ET.muted, 0.5, 14)}">AVERAGE PER BRANCH · ${esc(prodLbl)} · PKR Mn</div>
     <div style="padding:2px 2px 8px;${TB(10.5, 500, ET.muted, null, 14)}">${F.count(n)} ${n === 1 ? 'branch' : 'branches'} in view</div>
-    <div class="apb-card"><div class="apb-strip">${cells}</div></div>
+    <div class="apb-card"><table class="apb-tbl"><thead><tr><th>Month</th><th>Value</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
   </div>`;
 }
 

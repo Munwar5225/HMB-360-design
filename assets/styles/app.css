@@ -270,15 +270,17 @@ body.mobile-full{--sb:0px;--nav:0px}
 .mom-skel{height:18px;border-radius:6px;background:#E9EEEB;animation:momPulse 1.2s ease-in-out infinite alternate}
 @keyframes momPulse{from{opacity:.55}to{opacity:1}}
 
-/* ---------- EOP Average per branch month-wise strip ---------- */
+/* ---------- EOP Average per branch 2-column table ---------- */
 .apb-card{background:#fff;border:1px solid var(--eBorder);border-radius:16px;box-shadow:0 1px 2px rgba(16,24,20,.051);overflow:hidden}
-.apb-strip{display:flex;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
-.apb-strip::-webkit-scrollbar{display:none}
-.apb-cell{flex:1 0 auto;min-width:68px;border-right:1px solid var(--eBorder);display:flex;flex-direction:column;text-align:right}
-.apb-cell:last-child{border-right:0}
-.apb-lbl{padding:9px 10px 7px;border-bottom:1px solid var(--eGrid);font:700 9.5px var(--fBody);color:var(--eMuted);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
-.apb-val{padding:10px 10px 11px;font:500 13px var(--fMono);color:var(--eInk);font-variant-numeric:tabular-nums;white-space:nowrap}
-.apb-val.cur{font-weight:800}
+.apb-tbl{width:100%;border-collapse:collapse}
+.apb-tbl th{padding:9px 14px;background:var(--eTile);border-bottom:1px solid var(--eBorder);font:800 9.5px var(--fBody);color:var(--eMuted);text-transform:uppercase;letter-spacing:.4px}
+.apb-tbl th:first-child{text-align:left;border-right:1px solid var(--eBorder)}
+.apb-tbl th:last-child{text-align:right}
+.apb-tbl td{padding:10px 14px;border-bottom:1px solid var(--eGrid)}
+.apb-tbl tbody tr:last-child td{border-bottom:0}
+.apb-tbl td:first-child{font:600 12.5px var(--fBody);color:var(--eText2);text-align:left;border-right:1px solid var(--eBorder)}
+.apb-tbl td:last-child{font:500 13px var(--fMono);color:var(--eInk);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.apb-tbl tr.cur td{background:#F7FBF9;font-weight:800;color:var(--eInk)}
 
 /* ---------- Date picker ---------- */
 .dp{position:absolute;left:50%;top:50%;width:328px;background:var(--m3High);border-radius:28px;transform:translate(-50%,-50%) scale(.92);opacity:0;transition:all .18s ease;font-family:var(--fApp);overflow:hidden}
