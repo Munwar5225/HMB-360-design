@@ -56,7 +56,7 @@ const F = {
   },
   group(digits) { let b = ''; for (let i = 0; i < digits.length; i++) { if (i > 0 && (digits.length - i) % 3 === 0) b += ','; b += digits[i]; } return b; },
   number(v, dec) {
-    if (v == null || typeof v !== 'number' || isNaN(v)) return '—';
+    if (v == null || typeof v !== 'number' || isNaN(v)) return '–';
     let dp = dec === undefined ? 0 : dec;
     if (dp === 0 && v !== 0 && Math.abs(v) < 0.5) dp = 2;
     const fixed = Math.abs(v).toFixed(dp);
@@ -66,7 +66,7 @@ const F = {
     return dp === 0 ? (neg ? '−' : '') + g : `${neg ? '−' : ''}${g}.${p[1]}`;
   },
   signed(v, dec) {
-    if (v == null || typeof v !== 'number' || isNaN(v)) return '—';
+    if (v == null || typeof v !== 'number' || isNaN(v)) return '–';
     let dp = dec === undefined ? 0 : dec;
     if (dp === 0 && v !== 0 && Math.abs(v) < 0.5) dp = 2;
     const fixed = Math.abs(v).toFixed(dp);
@@ -78,11 +78,11 @@ const F = {
     return (v < 0 ? '−' : '+') + body;
   },
   count(v) {
-    if (v == null || typeof v !== 'number' || isNaN(v)) return '—';
+    if (v == null || typeof v !== 'number' || isNaN(v)) return '–';
     const neg = v < 0 && Math.round(Math.abs(v)) !== 0;
     return (neg ? '−' : '') + F.group(String(Math.round(Math.abs(v))));
   },
-  percent(v, dp = 1) { return v == null || typeof v !== 'number' || isNaN(v) ? '—' : v.toFixed(dp) + '%'; },
+  percent(v, dp = 1) { return v == null || typeof v !== 'number' || isNaN(v) ? '–' : v.toFixed(dp) + '%'; },
   axis(v) {
     const a = Math.abs(v), s = v < 0 ? '−' : '';
     if (a >= 1e6) return s + (a / 1e6).toFixed(1) + 'M';
@@ -131,38 +131,74 @@ function chartLegend(series, showTarget) {
     ${showTarget ? `<div style="display:flex;align-items:center"><div style="display:flex;gap:3px"><div style="width:5px;height:2px;background:${ET.sortLabel}"></div><div style="width:5px;height:2px;background:${ET.sortLabel}"></div></div><span style="width:7px"></span><span style="${TB(11, 600, ET.muted)}">Target</span></div>` : ''}</div>`;
 }
 function trendSvg(width, { series, labels, target, fillArea }) {
-  const H = 220, TOP = 16, BOTTOM = 179, LEFT = 46, TICKS = 6;
-  const right = width - 14, plotW = right - LEFT;
-  const all = []; series.forEach(s => s.values.forEach(v => { if (typeof v === 'number') all.push(v); }));
+  const count = labels.length;
+  const showPtLabels = series.length === 1 && count <= 4;
+  const twoLineX = count > 2 && labels.some(l => String(l || '').length > 10);
+  const H = 220, TOP = showPtLabels ? 24 : 16, BOTTOM = twoLineX ? 174 : 182, LEFT = 56, TICKS = 6;
+  const right = width - 10;
+  const padX = count <= 1 ? 0 : count === 2 ? 34 : count <= 4 ? 22 : 18;
+  const plotL = LEFT + padX, plotR = right - padX, plotW = Math.max(10, plotR - plotL);
+  const all = []; series.forEach(s => s.values.forEach(v => { if (typeof v === 'number' && !isNaN(v)) all.push(v); }));
   if (target != null && target > 0) all.push(target);
   if (!all.length) return `<svg width="${width}" height="${H}"></svg>`;
   const mn = Math.min(...all), mx = Math.max(...all);
   let range = mx - mn; if (range === 0) range = Math.abs(mx) === 0 ? 1 : Math.abs(mx) * 0.1;
   const lo = mn >= 0 ? Math.max(0, mn - range * 0.12) : mn - range * 0.12, hi = mx + range * 0.12;
   const yOf = v => BOTTOM - (v - lo) / (hi - lo) * (BOTTOM - TOP);
-  const count = labels.length;
-  const xOf = i => (count <= 1 ? LEFT : LEFT + plotW * i / (count - 1));
+  const xOf = i => (count <= 1 ? (plotL + plotR) / 2 : plotL + plotW * i / (count - 1));
+  const tickFmt = v => ((hi - lo) >= 5 ? F.number(Math.round(v), 0) : F.number(v, 1));
   let o = '';
   for (let i = 0; i < TICKS; i++) {
     const f = i / (TICKS - 1), y = TOP + (BOTTOM - TOP) * f, v = hi - (hi - lo) * f;
     o += `<line x1="${LEFT}" y1="${y}" x2="${right}" y2="${y}" stroke="${ET.grid}" stroke-width="1"/>`;
-    o += `<text x="${LEFT - 8}" y="${y}" text-anchor="end" dominant-baseline="central" style="font-family:var(--fMono);font-size:10.5px;font-weight:400" fill="${ET.muted}">${F.axis(v)}</text>`;
+    o += `<text x="${LEFT - 7}" y="${y}" text-anchor="end" dominant-baseline="central" style="font-family:var(--fMono);font-size:9.5px;font-weight:400" fill="${ET.muted}">${tickFmt(v)}</text>`;
   }
   if (target != null && target > 0) {
     const dc = series.length === 1 ? series[0].color : ET.primary, y = yOf(target);
     o += `<line x1="${LEFT}" y1="${y}" x2="${right}" y2="${y}" stroke="${dc}" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="5 4"/>`;
   }
   series.forEach(s => {
-    const pts = []; for (let i = 0; i < s.values.length && i < count; i++) if (typeof s.values[i] === 'number') pts.push([xOf(i), yOf(s.values[i])]);
-    if (pts.length < 2) return;
-    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
-    if (fillArea) o += `<path d="${d} L${pts[pts.length - 1][0].toFixed(2)},${BOTTOM} L${pts[0][0].toFixed(2)},${BOTTOM} Z" fill="${s.color}" fill-opacity="0.08"/>`;
-    o += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-    pts.forEach(p => { o += `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="4" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`; });
+    const runs = [];
+    let curRun = [];
+    for (let i = 0; i < count; i++) {
+      const val = s.values[i];
+      if (typeof val === 'number' && !isNaN(val)) {
+        curRun.push({ x: xOf(i), y: yOf(val), val, lbl: labels[i] });
+      } else if (curRun.length) {
+        runs.push(curRun); curRun = [];
+      }
+    }
+    if (curRun.length) runs.push(curRun);
+    runs.forEach(run => {
+      if (run.length >= 2) {
+        const d = run.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+        if (fillArea) o += `<path d="${d} L${run[run.length - 1].x.toFixed(2)},${BOTTOM} L${run[0].x.toFixed(2)},${BOTTOM} Z" fill="${s.color}" fill-opacity="0.08"/>`;
+        o += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+      }
+      run.forEach((p, idx) => {
+        o += `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="4" fill="#fff" stroke="${s.color}" stroke-width="2.5"><title>${esc(s.name)} · ${esc(p.lbl)}: ${F.number(p.val)}</title></circle>`;
+        if (showPtLabels) {
+          const prev = idx > 0 ? run[idx - 1] : null;
+          const next = idx < run.length - 1 ? run[idx + 1] : null;
+          const risesRight = next && p.y - next.y > 14;
+          const risesLeft = prev && p.y - prev.y > 14;
+          const placeBelow = (risesRight || risesLeft) && p.y < BOTTOM - 20;
+          const ly = placeBelow ? p.y + 15 : p.y - 10;
+          o += `<text x="${p.x.toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3.5" stroke-linejoin="round" style="font-family:var(--fMono);font-size:9px;font-weight:700" fill="${ET.ink}">${F.number(p.val)}</text>`;
+        }
+      });
+    });
   });
   for (let i = 0; i < count; i++) {
-    const lbl = String(labels[i] || '').replace(/^SP Avg /, 'SP ').replace(/^FTM Avg /, 'FTM ').replace(/^YTD Avg /, 'YTD ');
-    o += `<text x="${xOf(i)}" y="${BOTTOM + 24}" text-anchor="middle" dominant-baseline="central" style="font-family:var(--fMono);font-size:${count > 4 ? 9 : 10}px;font-weight:400;letter-spacing:-0.3px" fill="${ET.muted}">${esc(lbl)}</text>`;
+    const raw = String(labels[i] || '');
+    const x = xOf(i);
+    if (twoLineX && /^((?:SP|FTM|YTD) Avg)\s+(.+)$/.test(raw)) {
+      const m = raw.match(/^((?:SP|FTM|YTD) Avg)\s+(.+)$/);
+      o += `<text x="${x.toFixed(2)}" y="${BOTTOM + 16}" text-anchor="middle" style="font-family:var(--fMono);font-size:9px;font-weight:500;letter-spacing:-0.2px" fill="${ET.muted}"><tspan x="${x.toFixed(2)}" dy="0">${esc(m[1])}</tspan><tspan x="${x.toFixed(2)}" dy="12">${esc(m[2])}</tspan></text>`;
+    } else {
+      const fs = count >= 6 ? 8.5 : 9.5;
+      o += `<text x="${x.toFixed(2)}" y="${BOTTOM + 22}" text-anchor="middle" dominant-baseline="central" style="font-family:var(--fMono);font-size:${fs}px;font-weight:500;letter-spacing:-0.3px" fill="${ET.muted}">${esc(raw)}</text>`;
+    }
   }
   return `<svg width="${width}" height="${H}" style="display:block;overflow:visible">${o}</svg>`;
 }

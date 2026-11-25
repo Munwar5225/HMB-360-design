@@ -92,8 +92,8 @@ const NTB_ROLE_LABEL = {
   'Un-Assigned': 'Un-Assigned', RBHs: 'All RBHs', TOTAL: 'Total',
 };
 const NTB_SERIES = ['#047857', '#1D4ED8', '#C98A04', '#7C4DDB', '#0E7490', '#C2410C', '#4338CA', '#0D9488'];
-const N = v => (typeof v === 'number' ? F.count(v) : '—');
-const P = v => (typeof v === 'number' ? F.percent(v) : '—');
+const N = v => (typeof v === 'number' ? F.count(v) : '–');
+const P = v => (typeof v === 'number' ? F.percent(v) : '–');
 function ntbRoleKey(name) { if (/^RBHs$/i.test(name)) return 'Branch'; if (/^TOTAL$/i.test(name)) return 'Total'; return name; }
 
 /* ---------------- data (port of ntb-report_2.js build() + deterministic prior-year dummy baseline for YoY) ---------------- */
@@ -735,6 +735,136 @@ function ntbRoleCardsSection(vm, list, ctx) {
   </div>`;
 }
 
+/* 1.1–1.6 NTB Accounts by month opened (MoM table, current month only) */
+function ntbMomScope(vm, list) {
+  if (vm.s.pf === 'SME' || vm.s.pf === 'DS') return null;
+  if (vm.s.loginRole.portfolio === 'SME') return null;
+  const retailList = (list || []).filter(b => b.segment !== 'SME' && b.segment !== 'DS');
+  if (vm.s.pf === 'All' && vm.s.path.length > 0 && !retailList.length) return null;
+
+  const sc = vm.s.loginRole.scope || {};
+  if (sc.rbhSme || sc.hm) return null;
+
+  if (sc.areaHead || sc.cm || sc.branch) {
+    const hit = retailList.find(b => b.rbh && b.rbh !== 'Vacant') || retailList[0];
+    const rbh = hit && hit.rbh;
+    if (!rbh) return null;
+    return { block: rbh, note: `${rbh}'s figures, the file goes no lower` };
+  }
+  if (sc.rbh) {
+    const belowRbh = vm.s.path.length >= 2;
+    return { block: sc.rbh, note: belowRbh ? `${sc.rbh}'s figures, the file goes no lower` : '' };
+  }
+  if (!vm.s.path.length) {
+    return { block: 'Retail', note: vm.s.pf === 'All' ? 'Retail book' : '' };
+  }
+  const rbh = vm.s.path[0];
+  return {
+    block: rbh,
+    note: vm.s.path.length >= 2 ? `${rbh}'s figures, the file goes no lower` : '',
+  };
+}
+
+function ntbMomEntryRow(vm, list) {
+  const scope = ntbMomScope(vm, list);
+  if (!scope) return '';
+  const asOf = (WEB_DATA.ntb_mom && WEB_DATA.ntb_mom.as_of_month) || 'Oct-26';
+  const unit = (WEB_DATA.ntb_mom && WEB_DATA.ntb_mom.unit) || 'PKR Mn';
+  const subParts = [scope.block === 'Retail' && scope.note ? scope.note : scope.block, unit, `as of ${asOf}`];
+  return `<div class="mom-entry" data-act="mom" data-block="${esc(scope.block)}" data-note="${esc(scope.note)}" style="margin-top:4px;margin-bottom:12px">
+    <div class="grow" style="min-width:0">
+      <div class="el1" style="${TB(13.5, 700, ET.ink)}">Accounts by month opened</div>
+      <div class="el1" style="margin-top:2px;${TB(10.5, 500, ET.muted)}">${esc(subParts.join(' · '))}</div>
+    </div>
+    ${I('chevron_right', 'r', 20, ET.muted)}
+  </div>`;
+}
+
+function openNtbMomSheet(blockName, note = '') {
+  const sbEl = $('#statusbar');
+  const sbH = sbEl ? sbEl.offsetHeight : 28;
+  const sheetH = Math.max(320, appH() - sbH);
+
+  const fmtAc = v => (v == null || typeof v !== 'number' || isNaN(v) ? '–' : F.count(v));
+  const fmtPlain = v => {
+    if (v == null || typeof v !== 'number' || isNaN(v)) return `<span style="color:${ET.muted}">–</span>`;
+    const txt = F.number(v);
+    const col = v < 0 && txt !== '0' ? ET.negative : ET.ink;
+    return `<span style="color:${col}">${txt}</span>`;
+  };
+  const fmtMove = v => {
+    if (v == null || typeof v !== 'number' || isNaN(v)) return `<span style="color:${ET.muted}">–</span>`;
+    const txt = F.signed(v);
+    const col = txt === '0' ? ET.ink : (v < 0 ? ET.negative : ET.positive);
+    return `<span style="color:${col}">${txt}</span>`;
+  };
+  const dataRow = (r, cls) => `<div class="mom-grid ${cls}">
+    <span>${esc(r.month)}</span>
+    <span>${fmtAc(r.accounts)}</span>
+    ${fmtPlain(r.eop)}
+    ${fmtMove(r.mtd)}
+    ${fmtPlain(r.ytd)}
+  </div>`;
+
+  const content = h(`<div style="display:flex;flex-direction:column;height:100%;min-height:0;background:#fff">
+    <div style="padding:9px 0 2px;display:flex;justify-content:center;flex:none">
+      <div style="width:36px;height:4px;border-radius:999px;background:#D5DDD8"></div>
+    </div>
+    <div style="padding:8px 14px 12px;display:flex;align-items:flex-start;gap:10px;border-bottom:1px solid ${ET.grid};flex:none">
+      <div class="grow" style="min-width:0">
+        <div class="el2" style="${TD(16, 800, ET.ink, -0.2)}">Accounts by month opened · ${esc(blockName)}</div>
+        <div data-slot="sub" style="margin-top:3px;${TB(11, 500, ET.muted, null, 15)}"></div>
+      </div>
+      <div data-act="close" style="width:30px;height:30px;border-radius:50%;background:#F1F5F9;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none">${I('close', 'r', 16, ET.ink)}</div>
+    </div>
+    <div data-slot="body" class="scroll" style="flex:1 1 auto;min-height:0;overflow-x:hidden"></div>
+  </div>`);
+
+  const subEl = content.querySelector('[data-slot=sub]');
+  const bodyEl = content.querySelector('[data-slot=body]');
+
+  const renderBody = () => {
+    const mom = WEB_DATA.ntb_mom;
+    const asOf = (mom && mom.as_of_month) || 'Oct-26';
+    const unit = (mom && mom.unit) || 'PKR Mn';
+    subEl.textContent = `${unit} · as of ${asOf}${note ? ` · ${note}` : ''}`;
+
+    if (!mom) {
+      bodyEl.innerHTML = `<div style="padding:16px 14px;display:flex;flex-direction:column;gap:12px">
+        ${Array.from({ length: 5 }, () => `<div class="mom-skel"></div>`).join('')}
+      </div>`;
+      return;
+    }
+    const blk = (mom.blocks || []).find(b => b.block === blockName);
+    if (!blk) {
+      bodyEl.innerHTML = `<div style="padding:36px 20px;text-align:center;${TB(13, 600, ET.muted, null, 19)}">No month-opened figures for ${esc(blockName)} in the bank's file.</div>`;
+      return;
+    }
+
+    let rowsHtml = `<div class="mom-grid mom-head">
+      <span>Month</span><span>A/Cs</span><span>EOP Vol.</span><span>MTD</span><span>YTD</span>
+    </div>`;
+    (blk.bands || []).forEach(band => {
+      rowsHtml += `<div class="mom-band">${esc(band.name)}</div>`;
+      (band.rows || []).forEach(r => { rowsHtml += dataRow(r, 'mom-row'); });
+      if (band.total) rowsHtml += dataRow(band.total, 'mom-total');
+    });
+    if (blk.grand) rowsHtml += dataRow(blk.grand, 'mom-grand');
+    bodyEl.innerHTML = `<div style="padding-bottom:24px">${rowsHtml}</div>`;
+  };
+
+  renderBody();
+  const sheet = openSheet(content, { radius: 24 });
+  sheet.el.style.height = sheetH + 'px';
+  sheet.el.style.maxHeight = sheetH + 'px';
+  content.querySelector('[data-act=close]').onclick = () => sheet.close();
+
+  if (!WEB_DATA.ntb_mom) {
+    DataLoader.load('ntb').then(renderBody).catch(() => {});
+  }
+  return sheet;
+}
+
 /* 4.3 Entity card (Opened Today on Opened measure; Funded MTD/YTD/Var on Funded; YoY comparison on YoY) + 1.2 info button on SC */
 function ntbEntityCard(vm, item, level) {
   const v = item.m, isFunded = vm.s.measure === 'funded', isYoy = vm.s.measure === 'yoy', isSc = level.k === 'sc';
@@ -861,6 +991,7 @@ Routes['/ntb-report'] = () => {
     o += `<div style="height:12px"></div>`;
     NTB_CARDS.forEach(c => { o += ntbMeasureCard(c, v) + `<div style="height:12px"></div>`; });
     o += ntbRoleCardsSection(vm, list, ctx);
+    o += ntbMomEntryRow(vm, list);
     return o;
   }
 
@@ -1013,6 +1144,7 @@ Routes['/ntb-report'] = () => {
     o += sectionHeading(`${meta.label.toUpperCase()} · ${(NTB_ROLE_LABEL[vm.s.role] || vm.s.role).toUpperCase()} · BY ${level.label.toUpperCase()}`, `${F.count(rows.length)} rows`);
     o += `<div style="height:10px"></div>` + sortBar(curSort.label, vm.s.sortDesc) + `<div style="height:12px"></div>`;
     rows.forEach(r => { o += ntbEntityCard(vm, r, level) + `<div style="height:12px"></div>`; });
+    o += ntbMomEntryRow(vm, list);
 
     /* 4.4 Role cards on EVERY level (below listing on drill levels) */
     o += ntbRoleCardsSection(vm, list, ctx);
@@ -1124,6 +1256,7 @@ Routes['/ntb-report'] = () => {
       case 'crumb': vm.goToCrumb(+t.dataset.i); break;
       case 'crumbback': vm.handleBack(); break;
       case 'roledrill': vm.openRoleCard(id); break;
+      case 'mom': openNtbMomSheet(t.dataset.block, t.dataset.note || ''); break;
       case 'roledetails': {
         e.stopPropagation();
         const r = (ctx.roleRows || [])[+t.dataset.i]; if (!r) break;

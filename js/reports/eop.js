@@ -143,9 +143,9 @@ const EopData = (() => {
     const sum = parts => {
       const out = {};
       cols.forEach(c => {
-        let t = 0;
-        parts.forEach(g => { const v = m[g] && m[g][c.k]; if (typeof v === 'number') t += v; });
-        out[c.k] = Math.round(t * 1e6) / 1e6;
+        let t = 0, any = false;
+        parts.forEach(g => { const v = m[g] && m[g][c.k]; if (typeof v === 'number' && !isNaN(v)) { t += v; any = true; } });
+        out[c.k] = any ? Math.round(t * 1e6) / 1e6 : null;
       });
       return out;
     };
@@ -249,12 +249,19 @@ const EopData = (() => {
     return groupLabel(metric);
   }
   function agg(list, group) {
-    const D = get(), out = zeroVec(D.cols);
+    const D = get(), out = {}, has = {};
+    D.cols.forEach(c => { out[c.k] = 0; has[c.k] = false; });
     list.forEach(b => {
       const v = b.m && b.m[group];
       if (!v) return;
-      D.cols.forEach(c => { if (typeof v[c.k] === 'number') out[c.k] += v[c.k]; });
+      D.cols.forEach(c => {
+        if (typeof v[c.k] === 'number' && !isNaN(v[c.k])) {
+          out[c.k] += v[c.k];
+          has[c.k] = true;
+        }
+      });
     });
+    D.cols.forEach(c => { out[c.k] = has[c.k] ? Math.round(out[c.k] * 1e6) / 1e6 : null; });
     return out;
   }
   function growth(m, k) {
@@ -529,7 +536,7 @@ class EopVM {
   selectPortfolio(pf) {
     if (pf === this.s.pf) return Promise.resolve();
     const keepChild = this.s.view !== 'eop' && (pf === 'All' || EOP_CHILDREN.some(c => c.id === this.s.view && c.books.includes(pf)));
-    return this.pulse({ pf, path: [], graphTab: 0, graphChart: 0, openAccordions: new Set(), view: keepChild ? this.s.view : 'eop' });
+    return this.pulse({ pf, path: [], graphTab: 0, openAccordions: new Set(), view: keepChild ? this.s.view : 'eop' });
   }
   selectStream(stream) {
     if (stream === this.s.stream) return Promise.resolve();
@@ -546,20 +553,20 @@ class EopVM {
     return this.pulse({ pf: defaultPf, stream: '', asOfKey: 'cur', asOfDate: '', path: [], openAccordions: new Set() });
   }
   selectProduct(metric) {
-    return this.pulse({ view: 'eop', metric, path: [], graphChart: 0, sortCol: this.s.asOfKey, sortDesc: true, openAccordions: new Set() });
+    return this.pulse({ view: 'eop', metric, path: [], sortCol: this.s.asOfKey, sortDesc: true, openAccordions: new Set() });
   }
   openChild(id) {
     const next = [...this.s.path, id];
     const lv = this.levels(next);
     if (this.s.path.length >= lv.length - 1) return Promise.resolve();
-    return this.pulse({ path: next, graphChart: 0, sortCol: this.s.asOfKey, sortDesc: true, openAccordions: new Set() });
+    return this.pulse({ path: next, sortCol: this.s.asOfKey, sortDesc: true, openAccordions: new Set() });
   }
   goToCrumb(idx) {
-    return this.pulse({ path: idx < 0 ? [] : this.s.path.slice(0, idx + 1), graphChart: 0, openAccordions: new Set() });
+    return this.pulse({ path: idx < 0 ? [] : this.s.path.slice(0, idx + 1), openAccordions: new Set() });
   }
   selectLevelFilter(i, val) {
     const next = [...this.s.path.slice(0, i), ...(val ? [val] : [])];
-    return this.pulse({ path: next, graphChart: 0, openAccordions: new Set() });
+    return this.pulse({ path: next, openAccordions: new Set() });
   }
   async openChildReport(id) {
     if (!this.childOpen(id)) return;
@@ -574,8 +581,8 @@ class EopVM {
   closeChildReport() { this.set({ view: 'eop' }); }
   handleBack() {
     if (this.s.view !== 'eop') return handleEopChildBack(this);
-    if (this.s.path.length) { this.set({ path: this.s.path.slice(0, -1), graphChart: 0, openAccordions: new Set() }); return true; }
-    if (this.s.metric) { this.set({ metric: null, path: [], graphChart: 0, openAccordions: new Set() }); return true; }
+    if (this.s.path.length) { this.set({ path: this.s.path.slice(0, -1), openAccordions: new Set() }); return true; }
+    if (this.s.metric) { this.set({ metric: null, path: [], openAccordions: new Set() }); return true; }
     return false;
   }
   toggleAccordion(id, silent) { const o = new Set(this.s.openAccordions); if (!o.delete(id)) o.add(id); this.set({ openAccordions: o }, silent); }
@@ -662,19 +669,21 @@ function eopChildEntry(vm) {
     }).join('')}</div></div>`;
 }
 
-/* 2.3 KEEP single chart on EOP Home (no 3 stacked charts) */
+/* 2.3 + Change 3: Single chart on EOP Home with EOP / MTD Avg / YTD Avg toggle */
 function eopHomeChart(vm, list, charts) {
-  const view = EOP_GRAPH_VIEWS[Math.max(0, Math.min(vm.s.graphChart, EOP_GRAPH_VIEWS.length - 1))];
-  const xs = view.keys.map(k => ({ k, label: (EopData.colByKey(k) || {}).label || k }));
   const tabs = ['All', ...EOP_BOOKS.map(b => b.label)];
   const sel = Math.max(0, Math.min(vm.s.graphTab, tabs.length - 1));
   const books = sel === 0 ? EOP_BOOKS : [EOP_BOOKS[sel - 1]];
+  const pct = books.length === 1 && EopData.isPct(books[0].id);
+  const views = pct ? [EOP_GRAPH_VIEWS[0]] : EOP_GRAPH_VIEWS;
+  const view = views[Math.max(0, Math.min(vm.s.graphChart, views.length - 1))];
+  const xs = view.keys.map(k => ({ k, label: (EopData.colByKey(k) || {}).label || k }));
   const series = books.map(b => {
     const v = EopData.agg(list, b.id);
     return { name: b.label, color: b.accent, values: xs.map(c => v[c.k]), target: view.target && books.length === 1 ? v.target : null };
   }).filter(sr => sr.values.some(x => typeof x === 'number' && x !== 0));
   if (!series.length) return '';
-  const single = series.length === 1;
+  const single = books.length === 1 && series.length === 1;
   const target = single && series[0].target > 0 ? series[0].target : null;
   const ci = charts.push({ series, labels: xs.map(x => x.label), target, fillArea: single }) - 1;
   return `<div class="esurf" style="border-radius:22px;padding:13px">
@@ -682,7 +691,7 @@ function eopHomeChart(vm, list, charts) {
     <div style="height:4px"></div>
     <div style="${TB(11, 500, ET.muted, null, 15)}">${esc(vm.pfLabel())} · ${view.id === 'eop' ? 'closing balances through the year' : view.label + ' balances'}</div>
     <div style="height:6px"></div>
-    ${tabRow(tabs, sel, 'gtab')}${tabRow(EOP_GRAPH_VIEWS.map(v => v.label), EOP_GRAPH_VIEWS.indexOf(view), 'gchart')}
+    ${tabRow(tabs, sel, 'gtab')}${tabRow(views.map(v => v.label), views.indexOf(view), 'gchart')}
     <div style="height:4px"></div><div class="trend" data-ci="${ci}" style="height:220px"></div><div style="height:8px"></div>
     ${chartLegend(series, target != null)}</div>`;
 }
@@ -785,7 +794,7 @@ function eopTotalsStrip(vm, list) {
   </div>`;
 }
 
-/* 2.11 Single balance chart on drill page (NO extra 2 stacked charts!) */
+/* 2.11 + Change 3: Single balance chart on drill page with EOP / MTD Avg / YTD Avg toggle */
 function eopDrillChart(vm, list, rows, level, charts) {
   const metric = vm.s.metric, pct = EopData.isPct(metric);
   const v = EopData.agg(list, metric);
@@ -797,19 +806,67 @@ function eopDrillChart(vm, list, rows, level, charts) {
   const target = view.target && v.target > 0 ? v.target : null;
   const series = [{ name: who, color: book.accent, values: xs.map(c => v[c.k]) }];
   const ci = charts.push({ series, labels: xs.map(x => x.label), target, fillArea: true }) - 1;
-  const statItem = (l, val, signed) => `<div style="flex:1;min-width:0">
-    <div class="el1" style="${TB(9, 700, ET.muted, 0.4)}">${l}</div><div style="height:3px"></div>
-    <div class="el1" style="${TM(12.5, 900, signed ? F.delta(val) : ET.ink)}">${signed ? F.signed(val) : F.number(val)}</div></div>`;
+  const statItem = (l, val, signed) => {
+    const num = typeof val === 'number' && !isNaN(val);
+    const tone = !num ? ET.muted : (signed ? F.delta(val) : ET.ink);
+    const txt = !num ? '–' : (signed ? F.signed(val) : F.number(val));
+    return `<div style="flex:1;min-width:0">
+      <div class="el1" style="${TB(9, 700, ET.muted, 0.4)}">${esc(l)}</div><div style="height:3px"></div>
+      <div class="el1" style="${TM(12, 900, tone)}">${txt}</div></div>`;
+  };
+  const statsHtml = view.id === 'eop'
+    ? statItem('EOP', vm.lead(v), false) + statItem('MTD', v.mtd, true) + statItem('YTD', v.ytd, true) + (view.target ? statItem('TARGET', v.target, false) : '')
+    : view.id === 'mtd'
+      ? statItem('FTM AVG SEP', v.ftmSep, false) + statItem('FTM AVG OCT', v.ftmOct, false) + statItem('MTD AVG', v.mtdAvg, true)
+      : statItem('SP AVG DEC-25', v.spDec, false) + statItem('SP AVG AUG-26', v.spAug, false) + statItem('YTD AVG SEP', v.ytdSep, false) + statItem('YTD AVG OCT', v.ytdOct, false);
+  const subTxt = view.id === 'eop' ? 'closing balances through the year' : `${view.label} balances`;
   return `<div class="esurf" style="border-radius:20px;padding:13px">
     <div class="el1" style="${TB(10, 800, ET.muted, 0.5)}">${esc(EopData.groupLabel(metric))} — PKR MILLION</div>
     <div style="height:2px"></div>
     <div class="el1" style="${TB(13.5, 700, ET.ink)}">${esc(who)}</div>
-    <div style="${TB(10.5, 500, ET.muted)}margin-top:2px">${F.count(rows.length)} ${esc(level.label)}${rows.length === 1 ? '' : 's'} · ${view.target ? 'dashed line is target' : 'sheet sets no target on averages'}</div>
+    <div style="${TB(10.5, 500, ET.muted)}margin-top:2px">${F.count(rows.length)} ${esc(level.label)}${rows.length === 1 ? '' : 's'} · ${esc(subTxt)}</div>
     <div style="height:6px"></div>
     ${tabRow(views.map(x => x.label), views.indexOf(view), 'gchart')}
-    <div style="display:flex;gap:8px;margin:6px 0 10px">${statItem('EOP', vm.lead(v), false)}${statItem('MTD', v.mtd, true)}${statItem('YTD', v.ytd, true)}${view.target ? statItem('TARGET', v.target, false) : ''}</div>
+    <div style="display:flex;gap:6px;margin:6px 0 10px">${statsHtml}</div>
     <div class="trend" data-ci="${ci}" style="height:220px"></div>
     <div style="height:8px"></div>${chartLegend(series, target != null)}</div>`;
+}
+
+/* Change 2: Average per branch, month-wise strip (below RBH / RBH-SME list on drill page only) */
+function eopAvgPerBranchStrip(vm, list) {
+  const metric = vm.s.metric;
+  if (!metric || EopData.isPct(metric)) return '';
+  if (vm.s.pf === 'DS' || vm.s.pf === 'Diplo') return '';
+  if (!list || !list.length) return '';
+  const sc = vm.s.role.scope || {};
+  if (sc.areaHead || sc.cm || sc.hm || sc.branch) return '';
+  if (vm.s.path.length > 0) return '';
+
+  const view = EOP_GRAPH_VIEWS[Math.max(0, Math.min(vm.s.graphChart, EOP_GRAPH_VIEWS.length - 1))];
+  const v = EopData.agg(list, metric);
+  const n = list.length;
+  const book = EOP_BOOK_MAP[metric];
+  const prodLbl = (book ? book.label : EopData.groupLabel(metric)).toUpperCase();
+
+  const cells = view.keys.map((k, idx) => {
+    const col = EopData.colByKey(k);
+    const lbl = (col && col.label) || k;
+    const raw = v[k];
+    const avg = typeof raw === 'number' && !isNaN(raw) ? raw / n : null;
+    const txt = avg === null ? '–' : F.number(avg);
+    const isLast = idx === view.keys.length - 1;
+    const neg = avg !== null && avg < 0 && txt !== '0';
+    return `<div class="apb-cell">
+      <div class="apb-lbl">${esc(lbl)}</div>
+      <div class="apb-val${isLast ? ' cur' : ''}"${neg ? ` style="color:${ET.negative}"` : ''}>${txt}</div>
+    </div>`;
+  }).join('');
+
+  return `<div data-slot="apb-strip" style="margin-top:4px">
+    <div style="padding:0 2px;${TB(10, 800, ET.muted, 0.5, 14)}">AVERAGE PER BRANCH · ${esc(prodLbl)} · PKR Mn</div>
+    <div style="padding:2px 2px 8px;${TB(10.5, 500, ET.muted, null, 14)}">${F.count(n)} ${n === 1 ? 'branch' : 'branches'} in view</div>
+    <div class="apb-card"><div class="apb-strip">${cells}</div></div>
+  </div>`;
 }
 
 /* 2.8 Entity board: collapsed accordions at book level (country & segment) AND below */
@@ -1021,6 +1078,7 @@ Routes['/eop-report'] = () => {
     o += `<div style="height:4px"></div>` + sectionHeading(`${EopData.levelGroupLabel(vm.s.metric, level)} · BY ${level.label.toUpperCase()}`, `${F.count(rows.length)} rows`);
     o += `<div style="height:10px"></div>` + sortBar(curSort.label, vm.s.sortDesc) + `<div style="height:12px"></div>`;
     rows.forEach(it => { o += eopEntityCard(vm, it, level) + `<div style="height:12px"></div>`; });
+    o += eopAvgPerBranchStrip(vm, list);
     return o;
   }
 

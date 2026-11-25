@@ -250,6 +250,36 @@ body.mobile-full{--sb:0px;--nav:0px}
 .fit > *{display:inline-block;transform-origin:left center}
 .eop-dd{height:46px;padding:0 14px;display:flex;align-items:center;gap:8px;background:var(--eTile);border:1px solid var(--eTrack);border-radius:12px;cursor:pointer}
 
+/* ---------- NTB MoM bottom sheet & quiet entry row ---------- */
+.mom-entry{background:#fff;border:1px solid var(--eBorder);border-radius:16px;padding:13px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,20,.051)}
+.mom-entry::after{content:'';position:absolute;inset:0;background:#0E1512;opacity:0;transition:opacity .15s;pointer-events:none}
+.mom-entry:active::after{opacity:.05}
+.mom-grid{display:grid;grid-template-columns:minmax(0,1.56fr) minmax(0,.80fr) minmax(0,.90fr) minmax(0,.84fr) minmax(0,.90fr);align-items:center;column-gap:4px}
+.mom-head{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid var(--eBorder);padding:9px 12px;font:800 9.5px var(--fBody);color:var(--eMuted);text-transform:uppercase;letter-spacing:.35px}
+.mom-head > span:not(:first-child){text-align:right;white-space:nowrap}
+.mom-band{padding:8px 12px;background:var(--eTile);border-bottom:1px solid var(--eBorder);font:800 11px var(--fBody);color:var(--eText2);letter-spacing:.25px}
+.mom-row{padding:9px 12px;border-bottom:1px solid var(--eGrid);background:#fff}
+.mom-row > span:first-child{font:600 12px var(--fBody);color:var(--eInk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mom-row > span:not(:first-child){font:500 11.5px var(--fMono);color:var(--eInk);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mom-total{padding:10px 12px;border-top:1px solid var(--eTrack);border-bottom:1px solid var(--eBorder);background:#FAFCFB}
+.mom-total > span:first-child{font:800 12px var(--fBody);color:var(--eInk);white-space:nowrap}
+.mom-total > span:not(:first-child){font:800 11.5px var(--fMono);color:var(--eInk);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mom-grand{padding:11px 12px;border-top:1.5px solid rgba(4,120,87,.28);border-bottom:1px solid rgba(4,120,87,.16);background:#F2FAF6}
+.mom-grand > span:first-child{font:800 11.5px var(--fBody);color:var(--ePrimary);white-space:nowrap}
+.mom-grand > span:not(:first-child){font:800 11.5px var(--fMono);color:var(--eInk);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mom-skel{height:18px;border-radius:6px;background:#E9EEEB;animation:momPulse 1.2s ease-in-out infinite alternate}
+@keyframes momPulse{from{opacity:.55}to{opacity:1}}
+
+/* ---------- EOP Average per branch month-wise strip ---------- */
+.apb-card{background:#fff;border:1px solid var(--eBorder);border-radius:16px;box-shadow:0 1px 2px rgba(16,24,20,.051);overflow:hidden}
+.apb-strip{display:flex;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.apb-strip::-webkit-scrollbar{display:none}
+.apb-cell{flex:1 0 auto;min-width:68px;border-right:1px solid var(--eBorder);display:flex;flex-direction:column;text-align:right}
+.apb-cell:last-child{border-right:0}
+.apb-lbl{padding:9px 10px 7px;border-bottom:1px solid var(--eGrid);font:700 9.5px var(--fBody);color:var(--eMuted);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.apb-val{padding:10px 10px 11px;font:500 13px var(--fMono);color:var(--eInk);font-variant-numeric:tabular-nums;white-space:nowrap}
+.apb-val.cur{font-weight:800}
+
 /* ---------- Date picker ---------- */
 .dp{position:absolute;left:50%;top:50%;width:328px;background:var(--m3High);border-radius:28px;transform:translate(-50%,-50%) scale(.92);opacity:0;transition:all .18s ease;font-family:var(--fApp);overflow:hidden}
 .dp.on{transform:translate(-50%,-50%);opacity:1}

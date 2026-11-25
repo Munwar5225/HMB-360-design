@@ -953,7 +953,6 @@ function renderFlows(vm) {
           return `${sep}<div class="fl-row" data-act="flclient" data-idx="${ci}">
             <span style="width:22px;height:22px;border-radius:8px;background:${tint};border:1px solid ${bdr};display:inline-flex;align-items:center;justify-content:center;${TM(11, 800, accent)}flex:none">${i + 1}</span>
             <div class="el2 grow" style="${TB(13, 600, ET.ink)}">${esc(r.name)}</div>
-            <span class="infobtn" title="Customer Details">${I('info_outline', 'f', 16, 'currentColor')}</span>
             <span style="${TM(13, 800, accent)}white-space:nowrap">${isOut ? '−' : '+'}${F.number(amt)}</span>
             ${I('chevron_right', 'r', 16, ET.muted)}
           </div>`;
